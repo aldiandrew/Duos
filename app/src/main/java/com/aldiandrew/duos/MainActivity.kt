@@ -124,22 +124,23 @@ class MainActivity : ComponentActivity() {
     ) {
         Scaffold(
             topBar = {
-                TopAppBar(
-                    title = {
-                        Column {
-                            Text("Duos", fontWeight = FontWeight.Bold)
-                            Text("Custom Status Bar", fontSize = 12.sp)
-                        }
-                    },
-                    actions = {
-                        IconButton(onClick = { onToggle(!enabled) }) {
-                            Icon(
-                                if (enabled) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
-                                contentDescription = if (enabled) "Stop" else "Start"
-                            )
-                        }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Duos", fontWeight = FontWeight.Bold)
+                        Text("Custom Status Bar", fontSize = 12.sp)
                     }
-                )
+                    IconButton(onClick = { onToggle(!enabled) }) {
+                        Icon(
+                            if (enabled) Icons.Outlined.Stop else Icons.Outlined.PlayArrow,
+                            contentDescription = if (enabled) "Stop" else "Start"
+                        )
+                    }
+                }
             }
         ) { padding ->
             Column(
@@ -307,11 +308,12 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun BatteryPreview() {
         Box(Modifier.size(58.dp), contentAlignment = Alignment.Center) {
+            val primaryColor = MaterialTheme.colorScheme.primary
             Canvas(Modifier.fillMaxSize()) {
                 val stroke = 4.dp.toPx()
                 val r = size.minDimension / 2 - stroke
                 drawArc(
-                    MaterialTheme.colorScheme.primary,
+                    primaryColor,
                     -90f,
                     313f,
                     false,
