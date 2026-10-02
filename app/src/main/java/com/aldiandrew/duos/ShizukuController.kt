@@ -3,6 +3,7 @@ package com.aldiandrew.duos
 import android.content.pm.PackageManager
 import rikka.shizuku.Shizuku
 import rikka.shizuku.ShizukuRemoteProcess
+import java.lang.reflect.Method
 
 object ShizukuController {
     private const val REQUEST_CODE = 1001
@@ -41,9 +42,10 @@ object ShizukuController {
         if (!hasPermission()) return false
 
         var success = true
+
         commands.forEach { command ->
             try {
-                val process: ShizukuRemoteProcess = Shizuku.newProcess(
+                val process = newProcess(
                     arrayOf("sh", "-c", command),
                     null,
                     null
@@ -57,6 +59,22 @@ object ShizukuController {
                 success = false
             }
         }
+
         return success
+    }
+
+    private fun newProcess(
+        command: Array<String>,
+        environment: Array<String>?,
+        directory: String?
+    ): ShizukuRemoteProcess {
+        val method: Method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+        return method.invoke(null, command, environment, directory) as ShizukuRemoteProcess
     }
 }
