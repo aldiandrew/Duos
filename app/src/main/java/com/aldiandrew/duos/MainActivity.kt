@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity() {
     private var automaticPosition by mutableStateOf(true)
     private var horizontalOffsetDp by mutableStateOf(0f)
     private var verticalOffsetDp by mutableStateOf(0f)
+    private var visualStyle by mutableStateOf(DuoVisualStyle.DUO)
 
     private var batteryNormalHex by mutableStateOf("")
     private var batteryChargingHex by mutableStateOf("")
@@ -278,6 +279,82 @@ class MainActivity : ComponentActivity() {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
+                        "Indicator Style",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        "Choose the shape/layout of the Duo renderer.",
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StyleButton(
+                            label = "Duo",
+                            selected = visualStyle == DuoVisualStyle.DUO,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            visualStyle = DuoVisualStyle.DUO
+                            DuoPreferences.setVisualStyle(
+                                this@MainActivity,
+                                visualStyle
+                            )
+                        }
+
+                        StyleButton(
+                            label = "Compact",
+                            selected = visualStyle == DuoVisualStyle.COMPACT,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            visualStyle = DuoVisualStyle.COMPACT
+                            DuoPreferences.setVisualStyle(
+                                this@MainActivity,
+                                visualStyle
+                            )
+                        }
+                    }
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        StyleButton(
+                            label = "Minimal",
+                            selected = visualStyle == DuoVisualStyle.MINIMAL,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            visualStyle = DuoVisualStyle.MINIMAL
+                            DuoPreferences.setVisualStyle(
+                                this@MainActivity,
+                                visualStyle
+                            )
+                        }
+
+                        StyleButton(
+                            label = "Ring",
+                            selected = visualStyle == DuoVisualStyle.RING,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            visualStyle = DuoVisualStyle.RING
+                            DuoPreferences.setVisualStyle(
+                                this@MainActivity,
+                                visualStyle
+                            )
+                        }
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
                         "Indicator Colors",
                         style = MaterialTheme.typography.titleMedium
                     )
@@ -406,6 +483,23 @@ class MainActivity : ComponentActivity() {
                 "Duos uses a normal application overlay for rendering. Shizuku is only the " +
                     "control layer for the SystemUI flags and overlay AppOp. If the custom " +
                     "service stops or fails, the native status bar is restored automatically."
+            )
+        }
+    }
+
+    @Composable
+    private fun StyleButton(
+        label: String,
+        selected: Boolean,
+        modifier: Modifier = Modifier,
+        onClick: () -> Unit
+    ) {
+        Button(
+            onClick = onClick,
+            modifier = modifier
+        ) {
+            Text(
+                if (selected) "✓ $label" else label
             )
         }
     }
