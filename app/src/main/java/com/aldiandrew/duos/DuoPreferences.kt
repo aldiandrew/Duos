@@ -46,6 +46,8 @@ object DuoPreferences {
     private const val KEY_WIFI_COLOR = "wifi_color"
     private const val KEY_SIGNAL_COLOR = "signal_color"
     private const val KEY_NETWORK_COLOR = "network_color"
+    private const val KEY_VISUAL_STYLE = "visual_style"
+
 
 
     fun getBatteryNormalColorOverride(context: Context): Int? =
@@ -148,6 +150,25 @@ object DuoPreferences {
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
             .remove(key)
+            .apply()
+    }
+
+    fun getVisualStyle(context: Context): DuoVisualStyle {
+        val value = context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getString(KEY_VISUAL_STYLE, DuoVisualStyle.DUO.name)
+            ?: DuoVisualStyle.DUO.name
+
+        return runCatching {
+            DuoVisualStyle.valueOf(value)
+        }.getOrDefault(DuoVisualStyle.DUO)
+    }
+
+    fun setVisualStyle(context: Context, style: DuoVisualStyle) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_VISUAL_STYLE, style.name)
             .apply()
     }
 
