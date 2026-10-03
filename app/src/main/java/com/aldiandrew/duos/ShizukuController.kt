@@ -16,12 +16,20 @@ object ShizukuController {
         }
 
     fun hasPermission(): Boolean =
-        isAvailable() &&
-            Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        try {
+            isAvailable() &&
+                Shizuku.checkSelfPermission() == PackageManager.PERMISSION_GRANTED
+        } catch (_: Throwable) {
+            false
+        }
 
     fun requestPermission() {
-        if (isAvailable() && !hasPermission()) {
-            Shizuku.requestPermission(REQUEST_CODE)
+        try {
+            if (isAvailable() && !hasPermission()) {
+                Shizuku.requestPermission(REQUEST_CODE)
+            }
+        } catch (_: Throwable) {
+            // Shizuku may be unavailable or restarting; keep the app usable.
         }
     }
 
