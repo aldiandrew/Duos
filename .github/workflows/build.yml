@@ -40,11 +40,11 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
-          gradle-version: "9.1.0"
+          gradle-version: "9.3.1"
 
       - name: Generate Gradle wrapper
         run: |
-          gradle wrapper --gradle-version 9.1.0
+          gradle wrapper --gradle-version 9.3.1
           chmod +x ./gradlew
 
       - name: Build debug APK
