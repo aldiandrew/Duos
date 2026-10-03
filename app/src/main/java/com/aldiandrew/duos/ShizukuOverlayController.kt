@@ -49,6 +49,21 @@ object ShizukuOverlayController {
                 return@launch
             }
 
+            // Switch from full immersive mode to a hybrid shell:
+            // SystemUI stays visible for the clock/notification icons,
+            // while its system-icon group is delegated to Duos.
+            val shell = SystemBarController.showCustomBarShell()
+            if (shell.isFailure) {
+                SystemBarController.restore()
+                callbackOnMain(
+                    callback,
+                    false,
+                    shell.exceptionOrNull()?.message
+                        ?: "Could not prepare the native status-bar shell"
+                )
+                return@launch
+            }
+
             CustomStatusBarService.clearError()
 
             val overlayPermission =
