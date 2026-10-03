@@ -1,24 +1,17 @@
 package com.aldiandrew.duos
 
-import android.Manifest
-import android.content.Intent
-import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,38 +20,42 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
 
     private var shizukuAvailable by mutableStateOf(false)
     private var shizukuPermission by mutableStateOf(false)
-    private var active by mutableStateOf(false)
-    private var starting by mutableStateOf(false)
+    private var systemBarHidden by mutableStateOf(false)
+    private var customActive by mutableStateOf(false)
+    private var busy by mutableStateOf(false)
+    private var permissionRequesting = false
 
     private val binderReceived =
         Shizuku.OnBinderReceivedListener {
             refreshShizuku()
+            refreshSystemBarState()
+            requestShizukuPermissionIfNeeded()
         }
 
     private val binderDead =
         Shizuku.OnBinderDeadListener {
             shizukuAvailable = false
             shizukuPermission = false
-            active = false
+            customActive = false
+            busy = false
         }
 
     private val permissionResult =
         Shizuku.OnRequestPermissionResultListener { code, _ ->
             if (code == ShizukuManager.REQUEST_CODE) {
+                permissionRequesting = false
                 refreshShizuku()
+                refreshSystemBarState()
             }
         }
-
-    private val notificationPermissionLauncher =
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,14 +68,10 @@ class MainActivity : ComponentActivity() {
         }
 
         refreshShizuku()
+        refreshSystemBarState()
+        requestShizukuPermissionIfNeeded()
 
-        if (Build.VERSION.SDK_INT >= 33) {
-            notificationPermissionLauncher.launch(
-                Manifest.permission.POST_NOTIFICATIONS
-            )
-        }
-
-        active = ShizukuOverlayController.isBound()
+        customActive = ShizukuOverlayController.isBound()
 
         setContent {
             MaterialTheme {
@@ -94,7 +87,6 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
@@ -109,150 +101,161 @@ class MainActivity : ComponentActivity() {
             )
 
             Text(
-                "The custom bar uses a Shizuku UserService so it can be placed above the Android SystemUI status bar without root."
+                "Step 1: hide the original Android status bar. " +
+                    "Step 2: show the custom status bar."
             )
 
-            StatusCard(
-                "Shizuku",
-                shizukuAvailable,
-                if (shizukuAvailable) {
-                    "Shizuku service detected."
-                } else {
-                    "Start Shizuku first."
-                }
-            )
-
-            if (!shizukuAvailable) {
-                Button(
-                    onClick = {
-                        try {
-                            startActivity(
-                                Intent(
-                                    "moe.shizuku.manager.ACTION_SETTINGS"
-                                )
-                            )
-                        } catch (_: Throwable) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Open Shizuku manually and start the service.",
-                                Toast.LENGTH_LONG
-                            ).show()
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Open Shizuku")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Shizuku: " + if (shizukuAvailable) "READY" else "NOT READY",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        when {
+                            !shizukuAvailable ->
+                                "Start Shizuku first, then return to Duos."
+                            !shizukuPermission ->
+                                "Duos permission is required; the permission request will be triggered automatically when Shizuku is available."
+                            else ->
+                                "Duos is authorized to run the required commands."
+                        },
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
 
-            StatusCard(
-                "Duos permission",
-                shizukuPermission,
-                if (shizukuPermission) {
-                    "Authorized."
-                } else {
-                    "Authorization is required."
-                }
-            )
-
-            if (shizukuAvailable && !shizukuPermission) {
-                Button(
-                    onClick = {
-                        ShizukuManager.requestPermission(permissionResult)
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Authorize Duos in Shizuku")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "System Status Bar: " +
+                            when {
+                                systemBarHidden -> "HIDDEN"
+                                else -> "VISIBLE"
+                            },
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    Text(
+                        when {
+                            systemBarHidden && customActive ->
+                                "Original status bar is hidden and the custom layer is running."
+                            systemBarHidden ->
+                                "Original status bar is hidden. You can now show the custom status bar."
+                            else ->
+                                "Original Android status bar is visible."
+                        },
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
                 }
             }
-
-            StatusCard(
-                "Custom status bar",
-                active,
-                if (active) {
-                    "Running above SystemUI."
-                } else {
-                    "Not running."
-                }
-            )
 
             Button(
-                enabled = shizukuAvailable &&
-                    shizukuPermission &&
-                    !starting,
-                onClick = {
-                    if (active) {
-                        starting = true
-                        ShizukuOverlayController.stop {
-                            active = false
-                            starting = false
-                        }
-                    } else {
-                        starting = true
-
-                        ShizukuOverlayController.start(
-                            this@MainActivity
-                        ) { success, message ->
-                            starting = false
-                            active = success
-
-                            if (!success) {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    message.ifBlank {
-                                        "Could not start custom status bar"
-                                    },
-                                    Toast.LENGTH_LONG
-                                ).show()
-                            }
-                        }
-                    }
-                },
+                enabled = shizukuAvailable && shizukuPermission && !busy,
+                onClick = { toggleSystemStatusBar() },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
                     when {
-                        starting -> "Starting..."
-                        active -> "Stop Custom Status Bar"
-                        else -> "Start Custom Status Bar"
+                        busy -> "Please wait..."
+                        systemBarHidden -> "Show System Status Bar"
+                        else -> "Hide Status Bar"
                     }
                 )
             }
 
-            OutlinedButton(
-                onClick = {
-                    refreshShizuku()
-                    active = ShizukuOverlayController.isBound()
-                },
+            Button(
+                enabled =
+                    shizukuAvailable &&
+                        shizukuPermission &&
+                        systemBarHidden &&
+                        !busy,
+                onClick = { toggleCustomStatusBar() },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Refresh")
+                Text(
+                    when {
+                        busy -> "Please wait..."
+                        customActive -> "Hide Custom Status Bar"
+                        else -> "Show Custom Status Bar"
+                    }
+                )
             }
 
             Text(
-                "SystemUI remains underneath the custom layer and is not used as the visible status bar."
+                "The custom button never hides the native status bar automatically. " +
+                    "This keeps the two operations independent and makes failures easier to diagnose."
             )
         }
     }
 
-    @Composable
-    private fun StatusCard(
-        title: String,
-        ok: Boolean,
-        description: String
-    ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    title + ": " + if (ok) "READY" else "NOT READY",
-                    style = MaterialTheme.typography.titleMedium
-                )
+    private fun toggleSystemStatusBar() {
+        busy = true
 
-                Text(
-                    description,
-                    modifier = Modifier.padding(top = 4.dp)
+        lifecycleScope.launch {
+            if (systemBarHidden) {
+                if (customActive) {
+                    ShizukuOverlayController.stop(restoreSystemBar = false)
+                    customActive = false
+                }
+
+                val result = SystemBarController.restore()
+
+                if (result.isSuccess) {
+                    systemBarHidden = false
+                } else {
+                    showError(
+                        result.exceptionOrNull()?.message
+                            ?: "Could not restore system status bar"
+                    )
+                }
+            } else {
+                val result = SystemBarController.hide()
+
+                if (result.isSuccess) {
+                    systemBarHidden = true
+                } else {
+                    showError(
+                        result.exceptionOrNull()?.message
+                            ?: "Could not hide system status bar"
+                    )
+                }
+            }
+
+            busy = false
+            refreshSystemBarState()
+        }
+    }
+
+    private fun toggleCustomStatusBar() {
+        if (!systemBarHidden) {
+            showError("Hide the system status bar first.")
+            return
+        }
+
+        busy = true
+
+        if (customActive) {
+            ShizukuOverlayController.stop(restoreSystemBar = false) {
+                customActive = false
+                busy = false
+                refreshSystemBarState()
+            }
+            return
+        }
+
+        ShizukuOverlayController.start(this) { success, message ->
+            customActive = success
+            busy = false
+
+            if (!success) {
+                showError(
+                    message.ifBlank {
+                        "Could not start custom status bar"
+                    }
                 )
             }
+
+            refreshSystemBarState()
         }
     }
 
@@ -261,10 +264,42 @@ class MainActivity : ComponentActivity() {
         shizukuPermission = ShizukuManager.hasPermission()
     }
 
+    private fun refreshSystemBarState() {
+        lifecycleScope.launch {
+            if (!ShizukuManager.hasPermission()) {
+                return@launch
+            }
+
+            val hidden = SystemBarController.isHidden()
+            systemBarHidden = hidden
+            customActive = ShizukuOverlayController.isBound()
+        }
+    }
+
+    private fun requestShizukuPermissionIfNeeded() {
+        if (
+            ShizukuManager.isAvailable() &&
+                !ShizukuManager.hasPermission() &&
+                !permissionRequesting
+        ) {
+            permissionRequesting = true
+            ShizukuManager.requestPermission(permissionResult)
+        }
+    }
+
+    private fun showError(message: String) {
+        Toast.makeText(
+            this,
+            message,
+            Toast.LENGTH_LONG
+        ).show()
+    }
+
     override fun onResume() {
         super.onResume()
         refreshShizuku()
-        active = ShizukuOverlayController.isBound()
+        requestShizukuPermissionIfNeeded()
+        refreshSystemBarState()
     }
 
     override fun onDestroy() {
