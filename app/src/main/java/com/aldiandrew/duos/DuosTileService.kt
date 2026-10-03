@@ -58,7 +58,11 @@ class DuosTileService : TileService() {
         val tile = qsTile ?: return
 
         tile.label = "Duos"
-        tile.subtitle = "Custom Status Bar"
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            tile.subtitle = "Custom Status Bar"
+        }
+
         tile.icon = Icon.createWithResource(
             this,
             android.R.drawable.ic_menu_manage
