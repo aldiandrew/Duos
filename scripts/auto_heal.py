@@ -14,7 +14,7 @@ def main():
     n=sum(x.startswith("[auto-heal]") for x in run(["git","log","-n","20","--format=%s"],True).stdout.splitlines())
     if n>=MAX: raise RuntimeError(f"Auto-heal stopped after {n} attempts.")
     log=LOG.read_text(encoding="utf-8",errors="replace")[-60000:]
-    matches=re.findall(r"([A-Za-z0-9_./-]+\\.(?:kt|kts|java|gradle|xml))(?::\\d+)?(?::\\d+)?",log)
+    matches=re.findall(r"([A-Za-z0-9_./-]+\.(?:kt|kts|java|gradle|xml))(?::\d+)?(?::\d+)?",log)
     path=None
     for p in matches:
         q=(ROOT/p.lstrip("./")).resolve()
