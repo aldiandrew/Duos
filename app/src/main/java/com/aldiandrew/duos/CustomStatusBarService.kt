@@ -64,7 +64,7 @@ class CustomStatusBarService : Service() {
             } catch (t: Throwable) {
                 Log.w(
                     TAG,
-                    "state refresh failed: \${t.javaClass.simpleName}: \${t.message}"
+                    "state refresh failed: ${t.javaClass.simpleName}: ${t.message}"
                 )
             }
             handler.postDelayed(this, 1000L)
@@ -100,8 +100,8 @@ class CustomStatusBarService : Service() {
             Log.i(
                 TAG,
                 "Compact custom status bar started: " +
-                    "uid=\${android.os.Process.myUid()} " +
-                    "pid=\${android.os.Process.myPid()}"
+                    "uid=${android.os.Process.myUid()} " +
+                    "pid=${android.os.Process.myPid()}"
             )
         } catch (t: Throwable) {
             lastError = t.stackTraceToString()
@@ -235,7 +235,7 @@ class CustomStatusBarService : Service() {
         Log.i(
             TAG,
             "Adding compact custom status bar: " +
-                "type=\${params.type}, side=\${params.width}, gravity=TOP|END"
+                "type=${params.type}, side=${params.width}, gravity=TOP|END"
         )
 
         windowManager?.addView(customView, params)
@@ -308,7 +308,7 @@ class CustomStatusBarService : Service() {
         } catch (t: Throwable) {
             Log.w(
                 TAG,
-                "battery read failed: \${t.javaClass.simpleName}"
+                "battery read failed: ${t.javaClass.simpleName}"
             )
             0 to false
         }
@@ -367,7 +367,7 @@ class CustomStatusBarService : Service() {
         } catch (t: Throwable) {
             Log.w(
                 TAG,
-                "wifi read failed: \${t.javaClass.simpleName}"
+                "wifi read failed: ${t.javaClass.simpleName}"
             )
             Triple(0, false, false)
         }
@@ -413,7 +413,7 @@ class CustomStatusBarService : Service() {
         } catch (t: Throwable) {
             Log.w(
                 TAG,
-                "telephony read failed: \${t.javaClass.simpleName}"
+                "telephony read failed: ${t.javaClass.simpleName}"
             )
             0 to ""
         }
@@ -473,7 +473,7 @@ class CustomStatusBarService : Service() {
         } catch (t: Throwable) {
             Log.w(
                 TAG,
-                "appearance read failed: \${t.javaClass.simpleName}"
+                "appearance read failed: ${t.javaClass.simpleName}"
             )
             !isNightMode()
         }
