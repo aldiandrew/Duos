@@ -20,14 +20,25 @@ data class DuoStatusState(
     val airplane: Boolean = false,
     val dnd: Boolean = false,
     val foregroundColor: Int = Color.WHITE,
-    val batteryColorOverride: Int? = null
+    val batteryNormalColorOverride: Int? = null,
+    val batteryChargingColorOverride: Int? = null,
+    val batteryLowColorOverride: Int? = null,
+    val batteryPowerSaverColorOverride: Int? = null,
+    val wifiColorOverride: Int? = null,
+    val signalColorOverride: Int? = null,
+    val networkColorOverride: Int? = null
 ) {
     /**
-     * Default is the same black/white foreground used by SystemUI.
-     * A user-selected color overrides it for every battery state, including charging.
+     * Each state falls back to the SystemUI foreground color when no custom
+     * override is configured.
      */
     val batteryColor: Int
-        get() = batteryColorOverride ?: foregroundColor
+        get() = when {
+            charging -> batteryChargingColorOverride
+            powerSaver -> batteryPowerSaverColorOverride
+            batteryLevel <= 15 -> batteryLowColorOverride
+            else -> batteryNormalColorOverride
+        } ?: foregroundColor
 }
 
 /**
