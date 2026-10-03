@@ -35,15 +35,6 @@ object ShizukuOverlayController {
         }
 
         scope.launch {
-            if (!SystemBarController.isHidden()) {
-                callbackOnMain(
-                    callback,
-                    false,
-                    "Hide the system status bar first."
-                )
-                return@launch
-            }
-
             if (CustomStatusBarService.isRunning) {
                 callbackOnMain(callback, true, "")
                 return@launch
