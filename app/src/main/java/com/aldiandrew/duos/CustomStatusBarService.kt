@@ -215,8 +215,8 @@ class CustomStatusBarService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.END
             // Small inward offset from the physical right edge.
-            x = dp(3f)
-            y = -dp(1.5f)
+            x = dp(6f)
+            y = dp(2f)
 
             if (Build.VERSION.SDK_INT >= 28) {
                 layoutInDisplayCutoutMode =
