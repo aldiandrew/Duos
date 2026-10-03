@@ -54,6 +54,7 @@ class StatusBarService : Service() {
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var operationJob: Job? = null
+    private var foregroundReady = false
 
     private val handler = Handler(Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
@@ -66,10 +67,26 @@ class StatusBarService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForegroundCompat()
+
+        try {
+            startForegroundCompat()
+            foregroundReady = true
+        } catch (e: Throwable) {
+            Toast.makeText(
+                this,
+                "Could not start foreground service: " +
+                    (e.message ?: "unknown error"),
+                Toast.LENGTH_LONG
+            ).show()
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (!foregroundReady) {
+            return START_NOT_STICKY
+        }
+
         if (intent?.action == ACTION_STOP) {
             restoreAndStop()
         } else {
