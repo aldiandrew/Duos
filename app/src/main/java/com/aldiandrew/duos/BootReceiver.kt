@@ -21,8 +21,6 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
-        StatusBarHider.hide(context)
-
         try {
             ContextCompat.startForegroundService(
                 context,
