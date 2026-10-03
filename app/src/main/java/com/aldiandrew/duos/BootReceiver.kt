@@ -14,17 +14,24 @@ class BootReceiver : BroadcastReceiver() {
             return
         }
 
-        val enabled = context.getSharedPreferences("duos", Context.MODE_PRIVATE)
+        val enabled = context
+            .getSharedPreferences("duos", Context.MODE_PRIVATE)
             .getBoolean("enabled", false)
 
-        if (!enabled || !Settings.canDrawOverlays(context)) {
+        if (!enabled ||
+            !Settings.canDrawOverlays(context) ||
+            !ShizukuManager.isAvailable() ||
+            !ShizukuManager.hasPermission()
+        ) {
             return
         }
 
         try {
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, StatusBarService::class.java)
+                Intent(context, StatusBarService::class.java).apply {
+                    action = StatusBarService.ACTION_START
+                }
             )
         } catch (_: Throwable) {
         }
