@@ -19,8 +19,10 @@ import android.os.IBinder
 import android.provider.Settings
 import android.telephony.TelephonyManager
 import android.util.Log
+import android.view.DisplayCutout
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
 import android.view.WindowManager
 import androidx.annotation.Keep
 import kotlinx.coroutines.CoroutineScope
@@ -53,6 +55,9 @@ class CustomStatusBarService : Service() {
 
     private var windowManager: WindowManager? = null
     private var rootView: DuoIndicatorView? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
+    private var lastOverlayY: Int? = null
+    private var lastOverlayX: Int? = null
 
     private val handler = Handler(android.os.Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -137,6 +142,9 @@ class CustomStatusBarService : Service() {
 
         rootView = null
         windowManager = null
+        overlayParams = null
+        lastOverlayY = null
+        lastOverlayX = null
         isRunning = false
 
         // Safety rule: once the custom bar disappears, never leave the user with no status bar.
@@ -214,9 +222,11 @@ class CustomStatusBarService : Service() {
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.END
-            // Small inward offset from the physical right edge.
+
+            // Initial values are safe on every form factor. The actual position
+            // is calculated from WindowInsets immediately after attachment.
             x = dp(6f)
-            y = dp(2f)
+            y = 0
 
             if (Build.VERSION.SDK_INT >= 28) {
                 layoutInDisplayCutoutMode =
@@ -232,14 +242,30 @@ class CustomStatusBarService : Service() {
         customView.importantForAccessibility =
             View.IMPORTANT_FOR_ACCESSIBILITY_NO
 
+        customView.setOnApplyWindowInsetsListener { view, insets ->
+            applyDynamicOverlayPosition(view, side, insets)
+            insets
+        }
+
         Log.i(
             TAG,
             "Adding compact custom status bar: " +
                 "type=${params.type}, side=${params.width}, gravity=TOP|END"
         )
 
+        overlayParams = params
         windowManager?.addView(customView, params)
         rootView = customView
+
+        // Android builds can dispatch insets before or after attachment. Run
+        // a second pass to make the initial position deterministic.
+        customView.post {
+            applyDynamicOverlayPosition(
+                customView,
+                side,
+                customView.rootWindowInsets
+            )
+        }
 
         // Do not block the main thread during overlay creation. The night-mode value is a safe
         // first frame; the SystemUI appearance is refined by the asynchronous reader below.
@@ -487,6 +513,81 @@ class CustomStatusBarService : Service() {
 
     private fun compactSizePx(): Int =
         dp(30f).coerceAtLeast(1)
+
+    private fun applyDynamicOverlayPosition(
+        view: View,
+        side: Int,
+        insets: WindowInsets?
+    ) {
+        if (insets == null || windowManager == null) return
+
+        val statusTop: Int
+        val cutout: DisplayCutout?
+
+        if (Build.VERSION.SDK_INT >= 30) {
+            val bars = insets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.statusBars()
+            )
+            statusTop = bars.top
+            cutout = insets.displayCutout
+        } else if (Build.VERSION.SDK_INT >= 28) {
+            statusTop = insets.systemWindowInsetTop
+            cutout = insets.displayCutout
+        } else {
+            statusTop = insets.systemWindowInsetTop
+            cutout = null
+        }
+
+        val cutoutTop = cutout?.safeInsetTop ?: 0
+        val cutoutRight = cutout?.safeInsetRight ?: 0
+        val topBand = maxOf(statusTop, cutoutTop)
+
+        // Center the Duo square inside the status-bar band. When the band is
+        // shorter than the overlay, clamp at zero instead of using a negative
+        // y value that can clip the top of the indicator.
+        val targetY = ((topBand - side) / 2).coerceAtLeast(0)
+
+        // With TOP|END gravity, x is the inward distance from the physical
+        // right edge. Respect devices with a right-side safe inset.
+        val targetX = maxOf(
+            dp(6f),
+            cutoutRight
+        )
+
+        if (
+            targetX == lastOverlayX &&
+            targetY == lastOverlayY
+        ) {
+            return
+        }
+
+        val params = overlayParams ?: return
+        params.x = targetX
+        params.y = targetY
+
+        try {
+            windowManager?.updateViewLayout(view, params)
+            lastOverlayX = targetX
+            lastOverlayY = targetY
+
+            Log.d(
+                TAG,
+                "Duo overlay position: x=" + targetX +
+                    " y=" + targetY +
+                    " statusTop=" + statusTop +
+                    " cutoutTop=" + cutoutTop +
+                    " cutoutRight=" + cutoutRight +
+                    " side=" + side
+            )
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "Dynamic overlay reposition failed: " +
+                    t.javaClass.simpleName +
+                    ": " + t.message
+            )
+        }
+    }
 
     private fun dp(value: Float): Int =
         (value * resources.displayMetrics.density)
