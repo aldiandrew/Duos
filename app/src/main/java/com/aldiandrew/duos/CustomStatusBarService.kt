@@ -140,11 +140,15 @@ class CustomStatusBarService : Service() {
     }
 
     private fun startForegroundCompat() {
+        val builder =
+            if (Build.VERSION.SDK_INT >= 26) {
+                Notification.Builder(this, CHANNEL_ID)
+            } else {
+                Notification.Builder(this)
+            }
+
         val notification =
-            Notification.Builder(
-                this,
-                if (Build.VERSION.SDK_INT >= 26) CHANNEL_ID else ""
-            )
+            builder
                 .setSmallIcon(android.R.drawable.ic_menu_info_details)
                 .setContentTitle("Duos")
                 .setContentText("Custom status bar is running")
