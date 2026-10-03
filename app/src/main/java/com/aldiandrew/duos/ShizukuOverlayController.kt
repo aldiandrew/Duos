@@ -3,27 +3,34 @@ package com.aldiandrew.duos
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
+import rikka.shizuku.Shizuku
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import rikka.shizuku.Shizuku
 
 object ShizukuOverlayController {
 
     private val scope =
         CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    fun isBound(): Boolean = CustomStatusBarService.isRunning
+    fun isBound(): Boolean =
+        CustomStatusBarService.isRunning
 
     fun start(
         context: Context,
         callback: (Boolean, String) -> Unit
     ) {
         if (!ShizukuManager.hasPermission()) {
-            callback(false, "Shizuku permission is not granted")
+            callbackOnMain(
+                callback,
+                false,
+                "Shizuku permission is not granted"
+            )
             return
         }
 
@@ -84,23 +91,30 @@ object ShizukuOverlayController {
 
                 if (CustomStatusBarService.isRunning) {
                     callbackOnMain(callback, true, "")
-                    return@launch
+                    return@repeat
                 }
 
                 val error = CustomStatusBarService.lastError
+
                 if (error.isNotBlank()) {
-                    callbackOnMain(callback, false, error)
-                    return@launch
+                    callbackOnMain(
+                        callback,
+                        false,
+                        error
+                    )
+                    return@repeat
                 }
             }
 
-            callbackOnMain(
-                callback,
-                false,
-                CustomStatusBarService.lastError.ifBlank {
-                    "Custom status bar service did not start."
-                }
-            )
+            if (!CustomStatusBarService.isRunning) {
+                callbackOnMain(
+                    callback,
+                    false,
+                    CustomStatusBarService.lastError.ifBlank {
+                        "Custom status bar service did not start."
+                    }
+                )
+            }
         }
     }
 
@@ -133,7 +147,9 @@ object ShizukuOverlayController {
                 SystemBarController.restore()
             }
 
-            callbackOnMain(callback)
+            Handler(Looper.getMainLooper()).post {
+                callback?.invoke()
+            }
         }
     }
 
@@ -145,14 +161,17 @@ object ShizukuOverlayController {
         }
 
         if (Settings.canDrawOverlays(context)) {
-            return Result.success("Overlay permission already enabled")
+            return Result.success(
+                "Overlay permission already enabled"
+            )
         }
 
         val packageName = context.packageName
 
         val result =
             ShizukuManager.executeCommand(
-                "appops set $packageName android:system_alert_window allow"
+                "appops set $packageName " +
+                    "android:system_alert_window allow"
             )
 
         if (result.isFailure) {
@@ -167,29 +186,31 @@ object ShizukuOverlayController {
         delay(100L)
 
         if (Settings.canDrawOverlays(context)) {
-            return Result.success("Overlay permission enabled by Shizuku")
+            return Result.success(
+                "Overlay permission enabled by Shizuku"
+            )
         }
 
         val state =
             ShizukuManager.executeCommand(
-                "appops get $packageName android:system_alert_window"
+                "appops get $packageName " +
+                    "android:system_alert_window"
             ).getOrDefault("unknown")
 
-        Result.failure(
+        return Result.failure<String>(
             SecurityException(
-                "Display over other apps is still unavailable. AppOps: $state"
+                "Display over other apps is still unavailable. " +
+                    "AppOps: $state"
             )
         )
     }
 
     private fun callbackOnMain(
         callback: ((Boolean, String) -> Unit)?,
-        success: Boolean = true,
-        message: String = ""
+        success: Boolean,
+        message: String
     ) {
-        android.os.Handler(
-            android.os.Looper.getMainLooper()
-        ).post {
+        Handler(Looper.getMainLooper()).post {
             callback?.invoke(success, message)
         }
     }
