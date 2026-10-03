@@ -2,6 +2,7 @@ package com.aldiandrew.duos
 
 import android.content.Context
 import android.graphics.Color
+import org.json.JSONObject
 
 object DuoPreferences {
     private const val PREFS = "duos_preferences"
@@ -225,6 +226,204 @@ object DuoPreferences {
             .putBoolean(KEY_AUTO_POSITION, true)
             .putFloat(KEY_X_OFFSET_DP, 0f)
             .putFloat(KEY_Y_OFFSET_DP, 0f)
+            .apply()
+    }
+
+    fun exportSettings(context: Context): String {
+        val json = JSONObject()
+
+        json.put("version", 1)
+
+        getBatteryColorOverride(context)?.let {
+            json.put("battery_normal", colorToHex(it))
+        }
+
+        getBatteryChargingColorOverride(context)?.let {
+            json.put("battery_charging", colorToHex(it))
+        }
+
+        getBatteryLowColorOverride(context)?.let {
+            json.put("battery_low", colorToHex(it))
+        }
+
+        getBatteryPowerSaverColorOverride(context)?.let {
+            json.put("battery_power_saver", colorToHex(it))
+        }
+
+        getWifiColorOverride(context)?.let {
+            json.put("wifi", colorToHex(it))
+        }
+
+        getSignalColorOverride(context)?.let {
+            json.put("signal", colorToHex(it))
+        }
+
+        getNetworkColorOverride(context)?.let {
+            json.put("network", colorToHex(it))
+        }
+
+        json.put("indicator_size_dp", getIndicatorSizeDp(context))
+        json.put("automatic_position", isAutomaticPosition(context))
+        json.put("horizontal_offset_dp", getHorizontalOffsetDp(context))
+        json.put("vertical_offset_dp", getVerticalOffsetDp(context))
+        json.put("visual_style", getVisualStyle(context).name)
+
+        return json.toString(2)
+    }
+
+    fun importSettings(context: Context, content: String): Result<Unit> {
+        return try {
+            val json = JSONObject(content)
+            val version = json.optInt("version", 0)
+
+            if (version != 1) {
+                return Result.failure(
+                    IllegalArgumentException(
+                        "Unsupported Duos settings version: $version"
+                    )
+                )
+            }
+
+            fun parseOptionalColor(name: String): Int? {
+                if (!json.has(name)) return null
+
+                val value = json.optString(name, "")
+                if (value.isBlank()) return null
+
+                return Color.parseColor(value)
+            }
+
+            val batteryNormal = parseOptionalColor("battery_normal")
+            val batteryCharging = parseOptionalColor("battery_charging")
+            val batteryLow = parseOptionalColor("battery_low")
+            val batteryPowerSaver = parseOptionalColor("battery_power_saver")
+            val wifi = parseOptionalColor("wifi")
+            val signal = parseOptionalColor("signal")
+            val network = parseOptionalColor("network")
+
+            val size =
+                json.optDouble(
+                    "indicator_size_dp",
+                    36.0
+                ).toFloat().coerceIn(28f, 60f)
+
+            val automatic =
+                json.optBoolean("automatic_position", true)
+
+            val xOffset =
+                json.optDouble(
+                    "horizontal_offset_dp",
+                    0.0
+                ).toFloat().coerceIn(-24f, 24f)
+
+            val yOffset =
+                json.optDouble(
+                    "vertical_offset_dp",
+                    0.0
+                ).toFloat().coerceIn(-24f, 24f)
+
+            val styleName =
+                json.optString(
+                    "visual_style",
+                    DuoVisualStyle.DUO.name
+                )
+
+            val style =
+                runCatching {
+                    DuoVisualStyle.valueOf(styleName)
+                }.getOrElse {
+                    DuoVisualStyle.DUO
+                }
+
+            val editor =
+                context
+                    .getSharedPreferences(
+                        PREFS,
+                        Context.MODE_PRIVATE
+                    )
+                    .edit()
+
+            editor.clear()
+
+            batteryNormal?.let {
+                editor.putString(
+                    KEY_BATTERY_COLOR,
+                    String.format("#%08X", it)
+                )
+            }
+
+            batteryCharging?.let {
+                editor.putString(
+                    KEY_BATTERY_CHARGING_COLOR,
+                    String.format("#%08X", it)
+                )
+            }
+
+            batteryLow?.let {
+                editor.putString(
+                    KEY_BATTERY_LOW_COLOR,
+                    String.format("#%08X", it)
+                )
+            }
+
+            batteryPowerSaver?.let {
+                editor.putString(
+                    KEY_BATTERY_POWER_SAVER_COLOR,
+                    String.format("#%08X", it)
+                )
+            }
+
+            wifi?.let {
+                editor.putString(
+                    KEY_WIFI_COLOR,
+                    String.format("#%08X", it)
+                )
+            }
+
+            signal?.let {
+                editor.putString(
+                    KEY_SIGNAL_COLOR,
+                    String.format("#%08X", it)
+                )
+            }
+
+            network?.let {
+                editor.putString(
+                    KEY_NETWORK_COLOR,
+                    String.format("#%08X", it)
+                )
+            }
+
+            editor.putFloat(KEY_SIZE_DP, size)
+            editor.putBoolean(KEY_AUTO_POSITION, automatic)
+            editor.putFloat(KEY_X_OFFSET_DP, xOffset)
+            editor.putFloat(KEY_Y_OFFSET_DP, yOffset)
+            editor.putString(KEY_VISUAL_STYLE, style.name)
+
+            if (editor.commit()) {
+                Result.success(Unit)
+            } else {
+                Result.failure(
+                    IllegalStateException(
+                        "Could not save imported settings"
+                    )
+                )
+            }
+        } catch (t: Throwable) {
+            Result.failure(
+                IllegalArgumentException(
+                    "Invalid Duos settings file: " +
+                        (t.message ?: "unknown error")
+                )
+            )
+        }
+    }
+
+    fun resetAll(context: Context) {
+        context
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .clear()
             .apply()
     }
 
