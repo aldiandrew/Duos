@@ -333,6 +333,14 @@ class DuoIndicatorView(context: Context) : View(context) {
                 cx,
                 cy + 12f * k
             )
+            current.vpnConnected -> drawNetwork(
+                canvas,
+                current.networkColorOverride ?: current.foregroundColor,
+                "VPN",
+                k,
+                cx,
+                cy + 10f * k
+            )
             current.wifiConnected -> drawWifi(
                 canvas,
                 current.wifiColorOverride ?: current.foregroundColor,
