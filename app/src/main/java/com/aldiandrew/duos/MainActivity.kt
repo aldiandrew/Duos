@@ -17,6 +17,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -38,6 +39,10 @@ class MainActivity : ComponentActivity() {
     private var busy by mutableStateOf(false)
     private var batteryColorHex by mutableStateOf("")
     private var batteryColorError by mutableStateOf("")
+    private var indicatorSizeDp by mutableStateOf(36f)
+    private var automaticPosition by mutableStateOf(true)
+    private var horizontalOffsetDp by mutableStateOf(0f)
+    private var verticalOffsetDp by mutableStateOf(0f)
     private var permissionRequesting = false
 
     private val binderReceived =
@@ -83,6 +88,11 @@ class MainActivity : ComponentActivity() {
             DuoPreferences.getBatteryColorOverride(this)?.let {
                 DuoPreferences.colorToHex(it)
             } ?: ""
+
+        indicatorSizeDp = DuoPreferences.getIndicatorSizeDp(this)
+        automaticPosition = DuoPreferences.isAutomaticPosition(this)
+        horizontalOffsetDp = DuoPreferences.getHorizontalOffsetDp(this)
+        verticalOffsetDp = DuoPreferences.getVerticalOffsetDp(this)
 
         setContent {
             MaterialTheme {
@@ -172,6 +182,121 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Indicator Size & Position",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        "Size: ${indicatorSizeDp.toInt()} dp",
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Slider(
+                        value = indicatorSizeDp,
+                        onValueChange = {
+                            indicatorSizeDp = it
+                            DuoPreferences.setIndicatorSizeDp(
+                                this@MainActivity,
+                                it
+                            )
+                        },
+                        valueRange = 28f..60f,
+                        steps = 31,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        "Position",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Automatic")
+                        Button(
+                            onClick = {
+                                automaticPosition = !automaticPosition
+                                DuoPreferences.setAutomaticPosition(
+                                    this@MainActivity,
+                                    automaticPosition
+                                )
+                            }
+                        ) {
+                            Text(if (automaticPosition) "ON" else "OFF")
+                        }
+                    }
+
+                    Text(
+                        "Horizontal: ${horizontalOffsetDp.toInt()} dp",
+                        modifier = Modifier.padding(top = 6.dp)
+                    )
+
+                    Slider(
+                        value = horizontalOffsetDp,
+                        onValueChange = {
+                            horizontalOffsetDp = it
+                            automaticPosition = false
+                            DuoPreferences.setHorizontalOffsetDp(
+                                this@MainActivity,
+                                it
+                            )
+                            DuoPreferences.setAutomaticPosition(
+                                this@MainActivity,
+                                false
+                            )
+                        },
+                        valueRange = -24f..24f,
+                        steps = 47,
+                        enabled = !automaticPosition,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Text(
+                        "Vertical: ${verticalOffsetDp.toInt()} dp",
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+
+                    Slider(
+                        value = verticalOffsetDp,
+                        onValueChange = {
+                            verticalOffsetDp = it
+                            automaticPosition = false
+                            DuoPreferences.setVerticalOffsetDp(
+                                this@MainActivity,
+                                it
+                            )
+                            DuoPreferences.setAutomaticPosition(
+                                this@MainActivity,
+                                false
+                            )
+                        },
+                        valueRange = -24f..24f,
+                        steps = 47,
+                        enabled = !automaticPosition,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Button(
+                        onClick = {
+                            DuoPreferences.resetPosition(this@MainActivity)
+                            automaticPosition = true
+                            horizontalOffsetDp = 0f
+                            verticalOffsetDp = 0f
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Reset to Automatic")
+                    }
+                }
+            }
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
