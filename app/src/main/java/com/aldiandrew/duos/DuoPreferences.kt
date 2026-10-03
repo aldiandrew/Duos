@@ -38,3 +38,4 @@ object DuoPreferences {
 
     fun colorToHex(color: Int): String =
         String.format("#%06X", color and 0xFFFFFF)
+}
