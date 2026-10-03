@@ -27,18 +27,18 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android 37 SDK packages
+      - name: Install Android 36 SDK packages
         run: |
-          sdkmanager "platforms;android-37" "build-tools;37.0.0"
+          sdkmanager "platforms;android-36" "build-tools;36.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
         with:
-          gradle-version: "9.4.1"
+          gradle-version: "9.1.0"
 
       - name: Generate Gradle wrapper
         run: |
-          gradle wrapper --gradle-version 9.4.1
+          gradle wrapper --gradle-version 9.1.0
           chmod +x ./gradlew
 
       - name: Build debug APK
