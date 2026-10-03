@@ -37,6 +37,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,6 +60,7 @@ class StatusBarService : Service() {
     private var batteryText by mutableStateOf("--%")
     private var networkText by mutableStateOf("Offline")
 
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private val updateRunnable = object : Runnable {
         override fun run() {
@@ -68,6 +74,7 @@ class StatusBarService : Service() {
         createNotificationChannel()
         startForegroundCompat()
         showOverlay()
+        serviceScope.launch { StatusBarHider.hide() }
         updateStatus()
         handler.post(updateRunnable)
     }
@@ -75,7 +82,7 @@ class StatusBarService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             stopOverlay()
-            StatusBarHider.restore(this)
+            serviceScope.launch { StatusBarHider.restore() }
             getSharedPreferences("duos", MODE_PRIVATE).edit().putBoolean("enabled", false).apply()
             stopSelf()
             return START_NOT_STICKY
@@ -253,6 +260,7 @@ class StatusBarService : Service() {
 
     override fun onDestroy() {
         stopOverlay()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
