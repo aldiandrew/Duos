@@ -8,11 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Path
-import android.graphics.RectF
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.wifi.WifiManager
@@ -21,19 +17,17 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.provider.Settings
+import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
 import androidx.annotation.Keep
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 
 @Keep
@@ -58,22 +52,44 @@ class CustomStatusBarService : Service() {
     }
 
     private var windowManager: WindowManager? = null
-    private var rootView: StatusBarView? = null
+    private var rootView: DuoIndicatorView? = null
 
     private val handler = Handler(android.os.Looper.getMainLooper())
-    private val scope =
-        CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    private val clockRunnable = object : Runnable {
+    private val refreshRunnable = object : Runnable {
         override fun run() {
-            rootView?.refresh()
+            try {
+                rootView?.update(readState())
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "state refresh failed: \${t.javaClass.simpleName}: \${t.message}"
+                )
+            }
             handler.postDelayed(this, 1000L)
+        }
+    }
+
+    private val appearanceRunnable = object : Runnable {
+        override fun run() {
+            scope.launch {
+                val light = readLightStatusBar()
+                handler.post {
+                    rootView?.update(
+                        readState(
+                            foregroundOverride =
+                                if (light) Color.BLACK else Color.WHITE
+                        )
+                    )
+                }
+            }
+            handler.postDelayed(this, 3000L)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
-
         clearError()
 
         try {
@@ -85,22 +101,14 @@ class CustomStatusBarService : Service() {
 
             Log.i(
                 TAG,
-                "Custom status bar service started: " +
-                    "uid=${android.os.Process.myUid()} " +
-                    "pid=${android.os.Process.myPid()}"
+                "Compact custom status bar started: " +
+                    "uid=\${android.os.Process.myUid()} " +
+                    "pid=\${android.os.Process.myPid()}"
             )
         } catch (t: Throwable) {
             lastError = t.stackTraceToString()
-
-            Log.e(
-                TAG,
-                "Custom status bar service failed: " +
-                    "uid=${android.os.Process.myUid()} " +
-                    "pid=${android.os.Process.myPid()}",
-                t
-            )
-
             isRunning = false
+            Log.e(TAG, "Custom status bar failed", t)
             restoreSystemBarInBackground()
             stopSelf()
         }
@@ -115,7 +123,8 @@ class CustomStatusBarService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        handler.removeCallbacks(clockRunnable)
+        handler.removeCallbacks(refreshRunnable)
+        handler.removeCallbacks(appearanceRunnable)
 
         rootView?.let {
             try {
@@ -131,10 +140,11 @@ class CustomStatusBarService : Service() {
         rootView = null
         windowManager = null
         isRunning = false
+
+        // Safety rule: once the custom bar disappears, never leave the user with no status bar.
         restoreSystemBarInBackground()
 
-        Log.i(TAG, "Custom status bar service stopped")
-
+        Log.i(TAG, "Compact custom status bar stopped")
         scope.cancel()
         super.onDestroy()
     }
@@ -143,8 +153,7 @@ class CustomStatusBarService : Service() {
         if (Build.VERSION.SDK_INT < 26) return
 
         val manager =
-            getSystemService(Context.NOTIFICATION_SERVICE)
-                as? NotificationManager
+            getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager
                 ?: return
 
         manager.createNotificationChannel(
@@ -153,28 +162,25 @@ class CustomStatusBarService : Service() {
                 "Custom status bar",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description =
-                    "Keeps the Duos custom status bar service running."
+                description = "Keeps the Duos custom status bar service running."
                 setShowBadge(false)
             }
         )
     }
 
     private fun startForegroundCompat() {
-        val builder =
-            if (Build.VERSION.SDK_INT >= 26) {
-                Notification.Builder(this, CHANNEL_ID)
-            } else {
-                Notification.Builder(this)
-            }
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            Notification.Builder(this, CHANNEL_ID)
+        } else {
+            Notification.Builder(this)
+        }
 
-        val notification =
-            builder
-                .setSmallIcon(android.R.drawable.ic_menu_info_details)
-                .setContentTitle("Duos")
-                .setContentText("Custom status bar is running")
-                .setOngoing(true)
-                .build()
+        val notification = builder
+            .setSmallIcon(android.R.drawable.ic_menu_info_details)
+            .setContentTitle("Duos")
+            .setContentText("Custom status bar is running")
+            .setOngoing(true)
+            .build()
 
         if (Build.VERSION.SDK_INT >= 34) {
             startForeground(
@@ -183,47 +189,40 @@ class CustomStatusBarService : Service() {
                 ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
             )
         } else {
-            startForeground(
-                NOTIFICATION_ID,
-                notification
-            )
+            startForeground(NOTIFICATION_ID, notification)
         }
     }
 
     private fun createOverlay() {
-        if (Build.VERSION.SDK_INT >= 23 &&
-            !Settings.canDrawOverlays(this)
-        ) {
+        if (Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
             throw SecurityException(
                 "Display over other apps is not enabled for Duos"
             )
         }
 
         windowManager =
-            getSystemService(Context.WINDOW_SERVICE)
-                as? WindowManager
-                ?: throw IllegalStateException(
-                    "WindowManager unavailable"
-                )
+            getSystemService(Context.WINDOW_SERVICE) as? WindowManager
+                ?: throw IllegalStateException("WindowManager unavailable")
 
-        val height = statusBarHeightPx()
+        val side = compactSizePx()
 
         val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.MATCH_PARENT,
-            height,
+            side,
+            side,
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             android.graphics.PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP
-            alpha = 1f
+            gravity = Gravity.TOP or Gravity.END
+            // Small inward offset from the physical right edge.
+            x = dp(3f)
+            y = -dp(1.5f)
 
             if (Build.VERSION.SDK_INT >= 28) {
                 layoutInDisplayCutoutMode =
-                    WindowManager.LayoutParams
-                        .LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
             }
 
             if (Build.VERSION.SDK_INT >= 30) {
@@ -231,530 +230,287 @@ class CustomStatusBarService : Service() {
             }
         }
 
-        val customView = StatusBarView(this)
+        val customView = DuoIndicatorView(this)
+        customView.importantForAccessibility =
+            View.IMPORTANT_FOR_ACCESSIBILITY_NO
 
         Log.i(
             TAG,
-            "Adding custom status bar window: " +
-                "type=${params.type}, " +
-                "width=${params.width}, " +
-                "height=${params.height}, " +
-                "uid=${android.os.Process.myUid()}, " +
-                "pid=${android.os.Process.myPid()}"
+            "Adding compact custom status bar: " +
+                "type=\${params.type}, side=\${params.width}, gravity=TOP|END"
         )
 
         windowManager?.addView(customView, params)
+        rootView = customView
 
-        Log.i(
-            TAG,
-            "Custom status bar window added successfully"
+        val light = readLightStatusBar()
+        customView.update(
+            readState(
+                foregroundOverride =
+                    if (light) Color.BLACK else Color.WHITE
+            )
         )
 
-        rootView = customView
-        customView.refresh()
-
-        handler.post(clockRunnable)
+        handler.post(refreshRunnable)
+        handler.postDelayed(appearanceRunnable, 500L)
     }
 
-    private inner class StatusBarView(
-        context: Context
-    ) : View(context) {
+    private fun readState(
+        foregroundOverride: Int? = null
+    ): DuoStatusState {
+        val battery = batteryState()
+        val wifi = wifiState()
+        val airplane = isAirplaneOn()
+        val dnd = isDndOn()
+        val telephony = telephonyState(airplane)
 
-        private val timePaint =
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                textSize = sp(14f)
-                typeface = android.graphics.Typeface.create(
-                    android.graphics.Typeface.SANS_SERIF,
-                    android.graphics.Typeface.NORMAL
-                )
-            }
+        return DuoStatusState(
+            batteryLevel = battery.first,
+            charging = battery.second,
+            powerSaver = isPowerSaveOn(),
+            wifiLevel = wifi.first,
+            wifiConnected = wifi.second,
+            wifiValidated = wifi.third,
+            cellLevel = telephony.first,
+            networkGeneration = telephony.second,
+            airplane = airplane,
+            dnd = dnd,
+            foregroundColor =
+                foregroundOverride
+                    ?: if (isNightMode()) Color.WHITE else Color.BLACK
+        )
+    }
 
-        private val datePaint =
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                textSize = sp(11f)
-                typeface = android.graphics.Typeface.create(
-                    android.graphics.Typeface.SANS_SERIF,
-                    android.graphics.Typeface.NORMAL
-                )
-            }
-
-        private val iconPaint =
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                style = Paint.Style.STROKE
-                strokeWidth = dp(1.8f)
-                strokeCap = Paint.Cap.ROUND
-                strokeJoin = Paint.Join.ROUND
-            }
-
-        private val fillPaint =
-            Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.WHITE
-                style = Paint.Style.FILL
-            }
-
-        private val dateFormat =
-            SimpleDateFormat(
-                "dd MMM",
-                Locale.getDefault()
-            )
-
-        private val timeFormat =
-            SimpleDateFormat(
-                "HH:mm",
-                Locale.getDefault()
-            )
-
-        private var timeText = ""
-        private var dateText = ""
-        private var batteryLevel = 0
-        private var charging = false
-        private var wifiConnected = false
-        private var wifiLevel = 0
-        private var lightIcons = false
-
-        init {
-            setBackgroundColor(Color.TRANSPARENT)
-            importantForAccessibility =
-                IMPORTANT_FOR_ACCESSIBILITY_NO
-
-            updateIconAppearance()
-        }
-
-        fun refresh() {
-            val now = Date()
-
-            timeText = timeFormat.format(now)
-            dateText = dateFormat.format(now)
-
-            batteryState()
-            wifiState()
-            updateIconAppearance()
-
-            postInvalidate()
-
-            updateAppearanceFromSystemUi()
-        }
-
-        private fun updateAppearanceFromSystemUi() {
-            scope.launch {
-                val output =
-                    ShizukuManager.executeCommand(
-                        "dumpsys statusbar"
-                    ).getOrDefault("")
-
-                val appearanceLine =
-                    output.lineSequence()
-                        .firstOrNull {
-                            it.trimStart()
-                                .startsWith("mAppearance=")
-                        }
-
-                val detectedLight =
-                    appearanceLine?.contains(
-                        "LIGHT_STATUS_BARS",
-                        ignoreCase = true
-                    ) ?: (
-                        (
-                            resources.configuration.uiMode and
-                                Configuration.UI_MODE_NIGHT_MASK
-                            ) !=
-                                Configuration.UI_MODE_NIGHT_YES
-                        )
-
-                handler.post {
-                    if (lightIcons != detectedLight) {
-                        lightIcons = detectedLight
-                        updateIconAppearance()
-                        invalidate()
-                    }
-                }
-            }
-        }
-
-        private fun updateIconAppearance() {
-            val color =
-                if (lightIcons) Color.BLACK else Color.WHITE
-
-            timePaint.color = color
-            datePaint.color = color
-            iconPaint.color = color
-            fillPaint.color = color
-        }
-
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
-
-            val left = dp(12f)
-            val centerY = height / 2f
-
-            // AOSP-style left cluster: clock first, compact date next.
-            canvas.drawText(
-                timeText,
-                left,
-                centeredBaseline(timePaint),
-                timePaint
-            )
-
-            val timeWidth =
-                timePaint.measureText(timeText)
-
-            canvas.drawText(
-                dateText,
-                left + timeWidth + dp(7f),
-                centeredBaseline(datePaint),
-                datePaint
-            )
-
-            // Right cluster: Wi-Fi then battery, like the modern status bar.
-            var x = width.toFloat() - dp(12f)
-
-            val batteryWidth =
-                drawBattery(
-                    canvas,
-                    x,
-                    centerY
-                )
-
-            x -= batteryWidth + dp(8f)
-
-            drawWifi(
-                canvas,
-                x,
-                centerY
-            )
-        }
-
-        private fun drawBattery(
-            canvas: Canvas,
-            right: Float,
-            centerY: Float
-        ): Float {
-            val bodyWidth = dp(20f)
-            val bodyHeight = dp(10f)
-            val capWidth = dp(2f)
-
-            val left = right - capWidth - bodyWidth
-            val top = centerY - bodyHeight / 2f
-
-            iconPaint.style = Paint.Style.STROKE
-            iconPaint.strokeWidth = dp(1.5f)
-
-            canvas.drawRoundRect(
-                RectF(
-                    left,
-                    top,
-                    left + bodyWidth,
-                    top + bodyHeight
-                ),
-                dp(2f),
-                dp(2f),
-                iconPaint
-            )
-
-            canvas.drawRoundRect(
-                RectF(
-                    left + bodyWidth,
-                    centerY - dp(2f),
-                    left + bodyWidth + capWidth,
-                    centerY + dp(2f)
-                ),
-                dp(0.8f),
-                dp(0.8f),
-                fillPaint
-            )
-
-            val inner = dp(1.8f)
-            val maxFill =
-                bodyWidth - inner * 2f
-
-            val fillWidth =
-                maxFill *
-                    batteryLevel.coerceIn(0, 100) /
-                    100f
-
-            if (fillWidth > 0f) {
-                canvas.drawRoundRect(
-                    RectF(
-                        left + inner,
-                        top + inner,
-                        left + inner + fillWidth,
-                        top + bodyHeight - inner
-                    ),
-                    dp(1f),
-                    dp(1f),
-                    fillPaint
-                )
-            }
-
-            if (charging) {
-                val bolt = Path()
-
-                bolt.moveTo(
-                    left + bodyWidth * 0.58f,
-                    top + dp(1f)
-                )
-                bolt.lineTo(
-                    left + bodyWidth * 0.43f,
-                    centerY
-                )
-                bolt.lineTo(
-                    left + bodyWidth * 0.55f,
-                    centerY
-                )
-                bolt.lineTo(
-                    left + bodyWidth * 0.44f,
-                    top + bodyHeight - dp(1f)
-                )
-                bolt.close()
-
-                canvas.drawPath(
-                    bolt,
-                    fillPaint
-                )
-            }
-
-            return bodyWidth + capWidth
-        }
-
-        private fun drawWifi(
-            canvas: Canvas,
-            right: Float,
-            centerY: Float
-        ) {
-            val size = dp(18f)
-            val centerX = right - size / 2f
-            val top = centerY - size / 2f
-
-            iconPaint.style = Paint.Style.STROKE
-            iconPaint.strokeWidth = dp(1.7f)
-
-            if (!wifiConnected) {
-                val slash = Path()
-
-                slash.moveTo(
-                    centerX - dp(6f),
-                    top + dp(4f)
-                )
-                slash.lineTo(
-                    centerX + dp(6f),
-                    top + dp(14f)
-                )
-
-                canvas.drawPath(
-                    slash,
-                    iconPaint
-                )
-                return
-            }
-
-            val outer =
-                RectF(
-                    centerX - dp(7f),
-                    top + dp(1f),
-                    centerX + dp(7f),
-                    top + dp(15f)
-                )
-
-            val middle =
-                RectF(
-                    centerX - dp(5f),
-                    top + dp(4f),
-                    centerX + dp(5f),
-                    top + dp(14f)
-                )
-
-            val inner =
-                RectF(
-                    centerX - dp(3f),
-                    top + dp(7f),
-                    centerX + dp(3f),
-                    top + dp(14f)
-                )
-
-            when (wifiLevel.coerceIn(0, 3)) {
-                3 -> {
-                    canvas.drawArc(
-                        outer,
-                        225f,
-                        90f,
-                        false,
-                        iconPaint
-                    )
-                    canvas.drawArc(
-                        middle,
-                        225f,
-                        90f,
-                        false,
-                        iconPaint
-                    )
-                    canvas.drawArc(
-                        inner,
-                        225f,
-                        90f,
-                        false,
-                        iconPaint
-                    )
-                }
-
-                2 -> {
-                    canvas.drawArc(
-                        outer,
-                        225f,
-                        90f,
-                        false,
-                        iconPaint
-                    )
-                    canvas.drawArc(
-                        middle,
-                        225f,
-                        90f,
-                        false,
-                        iconPaint
-                    )
-                }
-
-                1 -> {
-                    canvas.drawArc(
-                        middle,
-                        225f,
-                        90f,
-                        false,
-                        iconPaint
-                    )
-                }
-            }
-
-            iconPaint.style = Paint.Style.FILL
-            canvas.drawCircle(
-                centerX,
-                top + dp(14f),
-                dp(1.7f),
-                fillPaint
-            )
-        }
-
-        private fun batteryState() {
+    private fun batteryState(): Pair<Int, Boolean> {
+        return try {
             val manager =
-                getSystemService(Context.BATTERY_SERVICE)
-                    as? BatteryManager
+                getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
 
-            batteryLevel =
+            val level =
+                manager?.getIntProperty(
+                    BatteryManager.BATTERY_PROPERTY_CAPACITY
+                )?.takeIf { it in 0..100 } ?: 0
+
+            val status =
+                registerReceiver(
+                    null,
+                    android.content.IntentFilter(
+                        Intent.ACTION_BATTERY_CHANGED
+                    )
+                )?.getIntExtra(
+                    BatteryManager.EXTRA_STATUS,
+                    BatteryManager.BATTERY_STATUS_UNKNOWN
+                ) ?: BatteryManager.BATTERY_STATUS_UNKNOWN
+
+            level to (
+                status == BatteryManager.BATTERY_STATUS_CHARGING ||
+                    status == BatteryManager.BATTERY_STATUS_FULL
+                )
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "battery read failed: \${t.javaClass.simpleName}"
+            )
+            0 to false
+        }
+    }
+
+    private fun wifiState(): Triple<Int, Boolean, Boolean> {
+        return try {
+            val wifi =
+                getSystemService(Context.WIFI_SERVICE) as? WifiManager
+                    ?: return Triple(0, false, false)
+
+            val cm =
+                getSystemService(Context.CONNECTIVITY_SERVICE)
+                    as? ConnectivityManager
+                    ?: return Triple(0, false, false)
+
+            if (!wifi.isWifiEnabled) {
+                return Triple(0, false, false)
+            }
+
+            val network = cm.activeNetwork
+            val caps = network?.let { cm.getNetworkCapabilities(it) }
+                ?: return Triple(0, false, false)
+
+            val transportWifi =
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)
+
+            if (!transportWifi) {
+                return Triple(0, false, false)
+            }
+
+            val validated =
+                caps.hasCapability(
+                    NetworkCapabilities.NET_CAPABILITY_VALIDATED
+                )
+
+            @Suppress("DEPRECATION")
+            val rssi = wifi.connectionInfo?.rssi ?: -127
+
+            val stockBars =
+                if (rssi == -127) {
+                    0
+                } else {
+                    @Suppress("DEPRECATION")
+                    (WifiManager.calculateSignalLevel(rssi, 5) + 1)
+                        .coerceIn(0, 4)
+                }
+
+            // Only a validated Wi-Fi network owns the middle slot; otherwise the mobile generation
+            // remains visible, matching the active data path.
+            Triple(
+                DuoStatusMapper.wifiBars(stockBars),
+                validated,
+                validated
+            )
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "wifi read failed: \${t.javaClass.simpleName}"
+            )
+            Triple(0, false, false)
+        }
+    }
+
+    private fun telephonyState(
+        airplane: Boolean
+    ): Pair<Int, String> {
+        if (airplane) return 0 to ""
+
+        return try {
+            val tm =
+                getSystemService(Context.TELEPHONY_SERVICE)
+                    as? TelephonyManager
+                    ?: return 0 to ""
+
+            val level =
                 try {
-                    manager?.getIntProperty(
-                        BatteryManager.BATTERY_PROPERTY_CAPACITY
-                    )?.takeIf { it in 0..100 }
-                        ?: 0
-                } catch (_: Throwable) {
+                    tm.signalStrength?.level?.coerceIn(0, 4) ?: 0
+                } catch (_: SecurityException) {
                     0
                 }
 
-            charging =
+            val networkType =
                 try {
-                    val status =
-                        registerReceiver(
-                            null,
-                            android.content.IntentFilter(
-                                Intent.ACTION_BATTERY_CHANGED
-                            )
-                        )?.getIntExtra(
-                            BatteryManager.EXTRA_STATUS,
-                            BatteryManager.BATTERY_STATUS_UNKNOWN
-                        )
-                            ?: BatteryManager.BATTERY_STATUS_UNKNOWN
+                    tm.dataNetworkType
+                } catch (_: SecurityException) {
+                    TelephonyManager.NETWORK_TYPE_UNKNOWN
+                }
 
-                    status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                        status == BatteryManager.BATTERY_STATUS_FULL
+            val nr =
+                try {
+                    val serviceState = tm.serviceState
+                    val method =
+                        serviceState?.javaClass?.getMethod("getNrState")
+                    val nrState = method?.invoke(serviceState) as? Int
+                    nrState == 2 || nrState == 3
                 } catch (_: Throwable) {
                     false
                 }
+
+            level to DuoStatusMapper.networkLabel(networkType, nr)
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "telephony read failed: \${t.javaClass.simpleName}"
+            )
+            0 to ""
+        }
+    }
+
+    private fun isAirplaneOn(): Boolean =
+        try {
+            Settings.Global.getInt(
+                contentResolver,
+                Settings.Global.AIRPLANE_MODE_ON,
+                0
+            ) == 1
+        } catch (_: Throwable) {
+            false
         }
 
-        private fun wifiState() {
-            wifiConnected = false
-            wifiLevel = 0
+    private fun isPowerSaveOn(): Boolean =
+        try {
+            val power =
+                getSystemService(Context.POWER_SERVICE)
+                    as? android.os.PowerManager
+            power?.isPowerSaveMode == true
+        } catch (_: Throwable) {
+            false
+        }
 
-            try {
-                val connectivity =
-                    getSystemService(
-                        Context.CONNECTIVITY_SERVICE
-                    ) as? ConnectivityManager
+    private fun isDndOn(): Boolean =
+        try {
+            val manager =
+                getSystemService(Context.NOTIFICATION_SERVICE)
+                    as? NotificationManager
+            val filter = manager?.currentInterruptionFilter
+            filter != null &&
+                filter != NotificationManager.INTERRUPTION_FILTER_ALL
+        } catch (_: Throwable) {
+            false
+        }
 
-                val network =
-                    connectivity?.activeNetwork
+    private fun readLightStatusBar(): Boolean {
+        return try {
+            val output = runBlocking(Dispatchers.IO) {
+                ShizukuManager.executeCommand(
+                    "dumpsys statusbar"
+                ).getOrDefault("")
+            }
 
-                val caps =
-                    network?.let {
-                        connectivity.getNetworkCapabilities(it)
+            val appearanceLine =
+                output.lineSequence()
+                    .firstOrNull {
+                        it.trimStart().startsWith("mAppearance=")
                     }
 
-                wifiConnected =
-                    caps?.hasTransport(
-                        NetworkCapabilities.TRANSPORT_WIFI
-                    ) == true
-
-                if (!wifiConnected) {
-                    return
-                }
-
-                val wifiManager =
-                    getSystemService(
-                        Context.WIFI_SERVICE
-                    ) as? WifiManager
-
-                @Suppress("DEPRECATION")
-                val rssi =
-                    wifiManager?.connectionInfo?.rssi
-                        ?: -100
-
-                @Suppress("DEPRECATION")
-                wifiLevel =
-                    WifiManager.calculateSignalLevel(
-                        rssi,
-                        4
-                    )
-            } catch (_: Throwable) {
-                wifiConnected = false
-                wifiLevel = 0
-            }
+            appearanceLine?.contains(
+                "LIGHT_STATUS_BARS",
+                ignoreCase = true
+            ) ?: !isNightMode()
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "appearance read failed: \${t.javaClass.simpleName}"
+            )
+            !isNightMode()
         }
-
-        private fun centeredBaseline(
-            paint: Paint
-        ): Float =
-            height / 2f -
-                (paint.ascent() + paint.descent()) / 2f
-
-        private fun dp(value: Float): Float =
-            value * resources.displayMetrics.density
-
-        private fun sp(value: Float): Float =
-            value * resources.displayMetrics.scaledDensity
     }
+
+    private fun isNightMode(): Boolean =
+        (
+            resources.configuration.uiMode and
+                Configuration.UI_MODE_NIGHT_MASK
+            ) == Configuration.UI_MODE_NIGHT_YES
+
+    private fun compactSizePx(): Int =
+        dp(30f).coerceAtLeast(1)
+
+    private fun dp(value: Float): Int =
+        (value * resources.displayMetrics.density)
+            .toInt()
+            .coerceAtLeast(1)
 
     private fun restoreSystemBarInBackground() {
         Thread {
             try {
-                kotlinx.coroutines.runBlocking {
+                runBlocking {
                     SystemBarController.restore()
                 }
             } catch (t: Throwable) {
-                Log.e(TAG, "Automatic system status bar restore failed", t)
+                Log.e(
+                    TAG,
+                    "Automatic system status bar restore failed",
+                    t
+                )
             }
         }.apply {
             name = "Duos-SystemBar-Restore"
             isDaemon = true
             start()
         }
-    }
-
-    private fun statusBarHeightPx(): Int {
-        // AOSP baseline: keep the custom visual bar close to 24dp and
-        // avoid oversized vendor-specific status-bar heights.
-        return (24f * resources.displayMetrics.density)
-            .toInt()
-            .coerceAtLeast(1)
     }
 }
