@@ -37,6 +37,17 @@
         </activity>
 
         <service
+            android:name=".DuosTileService"
+            android:exported="true"
+            android:label="Duos"
+            android:icon="@android:drawable/ic_menu_manage"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <service
             android:name=".CustomStatusBarService"
             android:exported="false"
             android:foregroundServiceType="specialUse">
