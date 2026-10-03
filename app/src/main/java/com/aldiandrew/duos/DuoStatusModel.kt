@@ -1,3 +1,10 @@
+enum class DuoVisualStyle {
+    DUO,
+    COMPACT,
+    MINIMAL,
+    RING
+}
+
 package com.aldiandrew.duos
 
 import android.graphics.Color
@@ -26,7 +33,8 @@ data class DuoStatusState(
     val batteryPowerSaverColorOverride: Int? = null,
     val wifiColorOverride: Int? = null,
     val signalColorOverride: Int? = null,
-    val networkColorOverride: Int? = null
+    val networkColorOverride: Int? = null,
+    val visualStyle: DuoVisualStyle = DuoVisualStyle.DUO
 ) {
     /**
      * Each state falls back to the SystemUI foreground color when no custom
