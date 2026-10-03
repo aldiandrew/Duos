@@ -28,7 +28,6 @@ class MainActivity : ComponentActivity() {
 
     private var shizukuAvailable by mutableStateOf(false)
     private var shizukuPermission by mutableStateOf(false)
-    private var systemBarHidden by mutableStateOf(false)
     private var customActive by mutableStateOf(false)
     private var busy by mutableStateOf(false)
     private var permissionRequesting = false
@@ -36,7 +35,7 @@ class MainActivity : ComponentActivity() {
     private val binderReceived =
         Shizuku.OnBinderReceivedListener {
             refreshShizuku()
-            refreshSystemBarState()
+            refreshCustomState()
             requestShizukuPermissionIfNeeded()
         }
 
@@ -53,7 +52,7 @@ class MainActivity : ComponentActivity() {
             if (code == ShizukuManager.REQUEST_CODE) {
                 permissionRequesting = false
                 refreshShizuku()
-                refreshSystemBarState()
+                refreshCustomState()
             }
         }
 
@@ -68,7 +67,7 @@ class MainActivity : ComponentActivity() {
         }
 
         refreshShizuku()
-        refreshSystemBarState()
+        refreshCustomState()
         requestShizukuPermissionIfNeeded()
 
         customActive = ShizukuOverlayController.isBound()
@@ -101,8 +100,8 @@ class MainActivity : ComponentActivity() {
             )
 
             Text(
-                "Duos keeps the native status-bar shell for the clock and notifications, " +
-                    "and replaces the native system-icon group with the Duo indicator."
+                "Hybrid mode keeps the native SystemUI clock and notification icons, " +
+                    "while Duos replaces only the native system-icon group with the Duo indicator."
             )
 
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -118,7 +117,7 @@ class MainActivity : ComponentActivity() {
                             !shizukuPermission ->
                                 "Duos permission is required."
                             else ->
-                                "Duos is authorized."
+                                "Authorized. No root is required."
                         },
                         modifier = Modifier.padding(top = 4.dp)
                     )
@@ -128,18 +127,16 @@ class MainActivity : ComponentActivity() {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "System Status Bar: " +
-                            if (systemBarHidden) "HIDDEN" else "VISIBLE",
+                        "Custom Status Bar: " +
+                            if (customActive) "ACTIVE" else "OFF",
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
-                        when {
-                            customActive ->
-                                "Native status-bar shell is visible. Clock and notifications stay native; Duo replaces system icons."
-                            systemBarHidden ->
-                                "Native status bar is hidden. Custom bar can now be shown."
-                            else ->
-                                "Native Android status bar is visible."
+                        if (customActive) {
+                            "SystemUI stays visible. Clock and notifications remain native; " +
+                                "battery, Wi-Fi and cellular indicators are represented by Duo."
+                        } else {
+                            "SystemUI is untouched until you enable the custom bar."
                         },
                         modifier = Modifier.padding(top = 4.dp)
                     )
@@ -147,24 +144,9 @@ class MainActivity : ComponentActivity() {
             }
 
             Button(
-                enabled = shizukuAvailable && shizukuPermission && !busy,
-                onClick = { toggleSystemStatusBar() },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    when {
-                        busy -> "Please wait..."
-                        systemBarHidden -> "Show System Status Bar"
-                        else -> "Hide Status Bar"
-                    }
-                )
-            }
-
-            Button(
                 enabled =
                     shizukuAvailable &&
                         shizukuPermission &&
-                        systemBarHidden &&
                         !busy,
                 onClick = { toggleCustomStatusBar() },
                 modifier = Modifier.fillMaxWidth()
@@ -179,60 +161,14 @@ class MainActivity : ComponentActivity() {
             }
 
             Text(
-                "The custom bar uses TYPE_APPLICATION_OVERLAY. Shizuku enables the required " +
-                    "AppOp automatically. When Duos stops, all native status-bar components " +
-                    "are restored."
+                "Duos uses a normal application overlay for rendering. Shizuku is only the " +
+                    "control layer for the SystemUI flags and overlay AppOp. If the custom " +
+                    "service stops or fails, the native status bar is restored automatically."
             )
         }
     }
 
-    private fun toggleSystemStatusBar() {
-        busy = true
-
-        lifecycleScope.launch {
-            if (systemBarHidden) {
-                if (customActive) {
-                    ShizukuOverlayController.stop(
-                        this@MainActivity,
-                        restoreSystemBar = false
-                    )
-                    customActive = false
-                }
-
-                val result = SystemBarController.restore()
-
-                if (result.isSuccess) {
-                    systemBarHidden = false
-                } else {
-                    showError(
-                        result.exceptionOrNull()?.message
-                            ?: "Could not restore system status bar"
-                    )
-                }
-            } else {
-                val result = SystemBarController.hide()
-
-                if (result.isSuccess) {
-                    systemBarHidden = true
-                } else {
-                    showError(
-                        result.exceptionOrNull()?.message
-                            ?: "Could not hide system status bar"
-                    )
-                }
-            }
-
-            busy = false
-            refreshSystemBarState()
-        }
-    }
-
     private fun toggleCustomStatusBar() {
-        if (!systemBarHidden) {
-            showError("Hide the system status bar first.")
-            return
-        }
-
         busy = true
 
         if (customActive) {
@@ -242,7 +178,7 @@ class MainActivity : ComponentActivity() {
             ) {
                 customActive = false
                 busy = false
-                refreshSystemBarState()
+                refreshCustomState()
             }
             return
         }
@@ -259,7 +195,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            refreshSystemBarState()
+            refreshCustomState()
         }
     }
 
@@ -268,22 +204,14 @@ class MainActivity : ComponentActivity() {
         shizukuPermission = ShizukuManager.hasPermission()
     }
 
-    private fun refreshSystemBarState() {
+    private fun refreshCustomState() {
         lifecycleScope.launch {
             if (!ShizukuManager.hasPermission()) {
+                customActive = false
                 return@launch
             }
 
-            val custom = ShizukuOverlayController.isBound()
-            val hidden = SystemBarController.isHidden()
-
-            customActive = custom
-
-            // During hybrid custom mode the native status-bar window is visible,
-            // but the native system-icon group is intentionally disabled. Keep
-            // the UI state in "custom mode" rather than treating that as a normal
-            // visible status bar, otherwise the custom-bar button becomes disabled.
-            systemBarHidden = custom || hidden
+            customActive = ShizukuOverlayController.isBound()
         }
     }
 
@@ -311,7 +239,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         refreshShizuku()
         requestShizukuPermissionIfNeeded()
-        refreshSystemBarState()
+        refreshCustomState()
     }
 
     override fun onDestroy() {
