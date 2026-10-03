@@ -101,8 +101,8 @@ class MainActivity : ComponentActivity() {
             )
 
             Text(
-                "1. Hide the original Android status bar. " +
-                    "2. Show the custom status bar."
+                "Duos keeps the native status-bar shell for the clock and notifications, " +
+                    "and replaces the native system-icon group with the Duo indicator."
             )
 
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -179,9 +179,9 @@ class MainActivity : ComponentActivity() {
             }
 
             Text(
-                "The custom status bar uses a normal app foreground service " +
-                    "and TYPE_APPLICATION_OVERLAY. Shizuku enables the required " +
-                    "overlay AppOp automatically; no manual overlay prompt is required."
+                "The custom bar uses TYPE_APPLICATION_OVERLAY. Shizuku enables the required " +
+                    "AppOp automatically. When Duos stops, all native status-bar components " +
+                    "are restored."
             )
         }
     }
