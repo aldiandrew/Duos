@@ -1,26 +1,28 @@
 package com.aldiandrew.duos
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.Parcel
-import android.os.Build
 import android.os.Process
 import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
-import android.widget.LinearLayout
-import android.widget.TextView
 import androidx.annotation.Keep
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 @Keep
-class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stub() {
+class ShizukuOverlayUserService(
+    private val context: Context
+) : IDuosOverlay.Stub() {
 
     companion object {
         private const val TAG = "duos_overlay"
@@ -34,16 +36,13 @@ class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stu
     private var errorMessage = ""
 
     private var windowManager: WindowManager? = null
-    private var rootView: View? = null
-    private var dateView: TextView? = null
-    private var timeView: TextView? = null
-    private var batteryView: TextView? = null
+    private var rootView: StatusBarView? = null
 
     private val handler = Handler(Looper.getMainLooper())
 
     private val clockRunnable = object : Runnable {
         override fun run() {
-            updateText()
+            rootView?.refresh()
             handler.postDelayed(this, 1000L)
         }
     }
@@ -53,7 +52,11 @@ class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stu
             createOverlay()
         } catch (t: Throwable) {
             errorMessage = t.stackTraceToString()
-            Log.e(TAG, "createOverlay() failed: uid=${Process.myUid()} pid=${Process.myPid()}", t)
+            Log.e(
+                TAG,
+                "createOverlay() failed: uid=${Process.myUid()} pid=${Process.myPid()}",
+                t
+            )
             ready = false
         }
     }
@@ -105,87 +108,128 @@ class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stu
             }
         }
 
-        val container = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), 0, dp(14), 0)
-            setBackgroundColor(Color.BLACK)
-            importantForAccessibility =
-                View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
+        // Do not create TextView here. A Shizuku shell UserService can inherit
+        // a theme/font configuration that makes TextView initialization fail
+        // with "The Typeface is not fully initialized". Canvas rendering avoids
+        // that framework/theme path entirely.
+        val customView = StatusBarView(context)
 
-        dateView = TextView(context).apply {
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            maxLines = 1
-        }
-
-        timeView = TextView(context).apply {
-            setTextColor(Color.WHITE)
-            textSize = 14f
-            maxLines = 1
-            setPadding(dp(10), 0, 0, 0)
-        }
-
-        val spacer = View(context).apply {
-            layoutParams = LinearLayout.LayoutParams(0, 1, 1f)
-        }
-
-        batteryView = TextView(context).apply {
-            setTextColor(Color.WHITE)
-            textSize = 12f
-            maxLines = 1
-        }
-
-        container.addView(
-            dateView,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
+        Log.i(
+            TAG,
+            "Adding custom status bar window: " +
+                "type=${params.type}, width=${params.width}, " +
+                "height=${params.height}, uid=${Process.myUid()}"
         )
 
-        container.addView(
-            timeView,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-        )
+        windowManager?.addView(customView, params)
 
-        container.addView(spacer)
-
-        container.addView(
-            batteryView,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
-            )
-        )
-
-        Log.i(TAG, "Adding custom status bar window: type=${params.type}, width=${params.width}, height=${params.height}, uid=${Process.myUid()}")
-        windowManager?.addView(container, params)
         Log.i(TAG, "Custom status bar window added successfully")
-        rootView = container
 
-        updateText()
+        rootView = customView
+        customView.refresh()
+
         handler.post(clockRunnable)
         ready = true
     }
 
-    private fun updateText() {
-        val now = Date()
+    private inner class StatusBarView(
+        context: Context
+    ) : View(context) {
 
-        dateView?.text =
+        private val datePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = dp(12).toFloat()
+        }
+
+        private val timePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = dp(14).toFloat()
+        }
+
+        private val batteryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = dp(12).toFloat()
+        }
+
+        private val backgroundPaint = Paint().apply {
+            color = Color.BLACK
+            style = Paint.Style.FILL
+        }
+
+        private val dateFormat =
             SimpleDateFormat("EEE, dd MMM", Locale.getDefault())
-                .format(now)
 
-        timeView?.text =
+        private val timeFormat =
             SimpleDateFormat("HH:mm", Locale.getDefault())
-                .format(now)
 
-        batteryView?.text =
-            batteryPercent().toString() + "%"
+        private var dateText = ""
+        private var timeText = ""
+        private var batteryText = "0%"
+
+        init {
+            setBackgroundColor(Color.BLACK)
+            importantForAccessibility =
+                IMPORTANT_FOR_ACCESSIBILITY_NO
+            refresh()
+        }
+
+        fun refresh() {
+            val now = Date()
+            dateText = dateFormat.format(now)
+            timeText = timeFormat.format(now)
+            batteryText = batteryPercent().toString() + "%"
+            postInvalidate()
+        }
+
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+
+            canvas.drawRect(
+                0f,
+                0f,
+                width.toFloat(),
+                height.toFloat(),
+                backgroundPaint
+            )
+
+            val left = dp(14).toFloat()
+            val right = width - dp(14).toFloat()
+            val timeGap = dp(10).toFloat()
+
+            val dateWidth = datePaint.measureText(dateText)
+            val timeWidth = timePaint.measureText(timeText)
+            val batteryWidth = batteryPaint.measureText(batteryText)
+
+            val centerY =
+                height / 2f -
+                    (datePaint.ascent() + datePaint.descent()) / 2f
+
+            canvas.drawText(
+                dateText,
+                left,
+                centerY,
+                datePaint
+            )
+
+            val timeX = left + dateWidth + timeGap
+
+            canvas.drawText(
+                timeText,
+                timeX,
+                height / 2f -
+                    (timePaint.ascent() + timePaint.descent()) / 2f,
+                timePaint
+            )
+
+            val batteryX = right - batteryWidth
+
+            canvas.drawText(
+                batteryText,
+                batteryX,
+                centerY,
+                batteryPaint
+            )
+        }
     }
 
     private fun batteryPercent(): Int {
@@ -212,11 +256,12 @@ class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stu
             "android"
         )
 
-        val value = if (id != 0) {
-            context.resources.getDimensionPixelSize(id)
-        } else {
-            dp(24)
-        }
+        val value =
+            if (id != 0) {
+                context.resources.getDimensionPixelSize(id)
+            } else {
+                dp(24)
+            }
 
         return value.coerceAtLeast(dp(24))
     }
@@ -239,9 +284,6 @@ class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stu
         }
 
         rootView = null
-        dateView = null
-        timeView = null
-        batteryView = null
         ready = false
     }
 }
