@@ -101,6 +101,7 @@ class CustomStatusBarService : Service() {
             )
 
             isRunning = false
+            restoreSystemBarInBackground()
             stopSelf()
         }
     }
@@ -115,7 +116,6 @@ class CustomStatusBarService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(clockRunnable)
-        scope.cancel()
 
         rootView?.let {
             try {
@@ -132,8 +132,12 @@ class CustomStatusBarService : Service() {
         windowManager = null
         isRunning = false
 
+        isRunning = false
+        restoreSystemBarInBackground()
+
         Log.i(TAG, "Custom status bar service stopped")
 
+        scope.cancel()
         super.onDestroy()
     }
 
@@ -730,6 +734,22 @@ class CustomStatusBarService : Service() {
 
         private fun sp(value: Float): Float =
             value * resources.displayMetrics.scaledDensity
+    }
+
+    private fun restoreSystemBarInBackground() {
+        Thread {
+            try {
+                kotlinx.coroutines.runBlocking {
+                    SystemBarController.restore()
+                }
+            } catch (t: Throwable) {
+                Log.e(TAG, "Automatic system status bar restore failed", t)
+            }
+        }.apply {
+            name = "Duos-SystemBar-Restore"
+            isDaemon = true
+            start()
+        }
     }
 
     private fun statusBarHeightPx(): Int {
