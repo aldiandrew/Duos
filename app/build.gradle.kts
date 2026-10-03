@@ -2,11 +2,9 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.plugin.compose")
 }
-
 android {
     namespace = "com.aldiandrew.duos"
     compileSdk = 36
-
     defaultConfig {
         applicationId = "com.aldiandrew.duos"
         minSdk = 26
@@ -14,21 +12,14 @@ android {
         versionCode = 2
         versionName = "1.1"
     }
-
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
     kotlinOptions { jvmTarget = "17" }
-
     buildFeatures { compose = true }
-
-    packaging {
-        resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" }
-    }
+    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
 }
-
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)
