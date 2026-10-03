@@ -74,16 +74,14 @@ class CustomStatusBarService : Service() {
     private val appearanceRunnable = object : Runnable {
         override fun run() {
             scope.launch {
-                val light = readLightStatusBar()
-                handler.post {
-                    rootView?.update(
-                        readState(
-                            foregroundOverride =
-                                if (light) Color.BLACK else Color.WHITE
-                        )
-                    )
-                }
+            val light = readLightStatusBar()
+            val snapshot = readState(
+                foregroundOverride = if (light) Color.BLACK else Color.WHITE
+            )
+            handler.post {
+                rootView?.update(snapshot)
             }
+        }
             handler.postDelayed(this, 3000L)
         }
     }
@@ -243,11 +241,12 @@ class CustomStatusBarService : Service() {
         windowManager?.addView(customView, params)
         rootView = customView
 
-        val light = readLightStatusBar()
+        // Do not block the main thread during overlay creation. The night-mode value is a safe
+        // first frame; the SystemUI appearance is refined by the asynchronous reader below.
         customView.update(
             readState(
                 foregroundOverride =
-                    if (light) Color.BLACK else Color.WHITE
+                    if (isNightMode()) Color.WHITE else Color.BLACK
             )
         )
 
