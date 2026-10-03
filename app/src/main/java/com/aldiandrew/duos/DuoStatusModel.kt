@@ -26,6 +26,7 @@ data class DuoStatusState(
     val networkGeneration: String = "",
     val airplane: Boolean = false,
     val dnd: Boolean = false,
+    val vpnConnected: Boolean = false,
     val foregroundColor: Int = Color.WHITE,
     val batteryNormalColorOverride: Int? = null,
     val batteryChargingColorOverride: Int? = null,
