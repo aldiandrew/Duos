@@ -21,8 +21,8 @@ object SystemBarController {
     }
 
     suspend fun hide(): Result<String> = withContext(Dispatchers.IO) {
-        // Keep the same CleanBar-style sequence:
-        // exit demo mode, disable status-bar icons, then apply immersive.status.
+        // CleanBar-style sequence: leave demo mode, disable the visible
+        // status-bar elements, then apply the immersive status policy.
         ShizukuManager.executeCommand(
             "am broadcast -a com.android.systemui.demo -e command exit"
         )
@@ -70,17 +70,26 @@ object SystemBarController {
         )
 
         if (
-            flags.isSuccess ||
-            delete.isSuccess ||
-            nullValue.isSuccess ||
-            demoExit.isSuccess
+            flags.isFailure &&
+            delete.isFailure &&
+            nullValue.isFailure &&
+            demoExit.isFailure
         ) {
-            delay(100)
+            return@withContext Result.failure(
+                IllegalStateException(
+                    "Could not restore system status bar"
+                )
+            )
+        }
+
+        delay(150)
+
+        if (!isHidden()) {
             Result.success("System status bar restored")
         } else {
             Result.failure(
                 IllegalStateException(
-                    "Could not restore system status bar"
+                    "Android still reports immersive.status=*"
                 )
             )
         }
