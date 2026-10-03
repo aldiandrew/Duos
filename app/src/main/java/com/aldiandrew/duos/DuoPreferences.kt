@@ -51,6 +51,10 @@ object DuoPreferences {
     fun getBatteryNormalColorOverride(context: Context): Int? =
         getBatteryColorOverride(context)
 
+    fun setBatteryNormalColor(context: Context, color: Int) =
+        setBatteryColor(context, color)
+
+
     fun getBatteryChargingColorOverride(context: Context): Int? =
         getColorOverride(context, KEY_BATTERY_CHARGING_COLOR)
 
