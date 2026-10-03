@@ -52,6 +52,59 @@ object SystemBarController {
         }
     }
 
+    /**
+     * Keeps the native status-bar container visible while disabling only
+     * the SystemUI system-icon group for the Duo replacement.
+     * Clock and notification icons remain owned by SystemUI.
+     */
+    suspend fun showCustomBarShell(): Result<String> = withContext(Dispatchers.IO) {
+        ShizukuManager.executeCommand(
+            "am broadcast -a com.android.systemui.demo -e command exit"
+        )
+
+        val flags = ShizukuManager.executeCommand(
+            "cmd statusbar send-disable-flag system-icons"
+        )
+
+        if (flags.isFailure) {
+            return@withContext Result.failure(
+                IllegalStateException(
+                    flags.exceptionOrNull()?.message
+                        ?: "Could not disable native system icons"
+                )
+            )
+        }
+
+        val delete = ShizukuManager.executeCommand(
+            "settings delete global policy_control"
+        )
+        val nullValue = ShizukuManager.executeCommand(
+            "settings put global policy_control null"
+        )
+
+        if (delete.isFailure && nullValue.isFailure) {
+            return@withContext Result.failure(
+                IllegalStateException(
+                    delete.exceptionOrNull()?.message
+                        ?: nullValue.exceptionOrNull()?.message
+                        ?: "Could not reveal the native status-bar container"
+                )
+            )
+        }
+
+        delay(150)
+
+        if (isHidden()) {
+            Result.failure(
+                IllegalStateException("Android still reports immersive.status=*")
+            )
+        } else {
+            Result.success(
+                "Native status-bar container visible; system icons delegated to Duos"
+            )
+        }
+    }
+
     suspend fun restore(): Result<String> = withContext(Dispatchers.IO) {
         val flags = ShizukuManager.executeCommand(
             "cmd statusbar send-disable-flag none"
