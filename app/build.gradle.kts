@@ -5,7 +5,7 @@ plugins {
 
 android {
     namespace = "com.aldiandrew.duos"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.aldiandrew.duos"
