@@ -131,8 +131,6 @@ class CustomStatusBarService : Service() {
         rootView = null
         windowManager = null
         isRunning = false
-
-        isRunning = false
         restoreSystemBarInBackground()
 
         Log.i(TAG, "Custom status bar service stopped")
