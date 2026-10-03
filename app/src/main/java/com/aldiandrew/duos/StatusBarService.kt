@@ -102,10 +102,9 @@ class StatusBarService : Service() {
                 return@launch
             }
 
-            if (!isDestroyed) {
-                showOverlay()
+            showOverlay()
 
-                if (overlayView != null) {
+            if (overlayView != null) {
                     getSharedPreferences(PREFS, MODE_PRIVATE)
                         .edit()
                         .putBoolean("enabled", true)
