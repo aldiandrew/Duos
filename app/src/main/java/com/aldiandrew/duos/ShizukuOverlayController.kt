@@ -69,6 +69,18 @@ object ShizukuOverlayController {
                             ?: "Custom status bar overlay did not start"
                     }
 
+                    if (!success) {
+                        try {
+                            Shizuku.unbindUserService(
+                                serviceArgs,
+                                serviceConnection,
+                                true
+                            )
+                        } catch (_: Throwable) {
+                        }
+                        binder = null
+                    }
+
                     mainHandler.post {
                         callback(success, message)
                     }
