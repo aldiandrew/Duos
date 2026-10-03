@@ -238,7 +238,7 @@ class MainActivity : ComponentActivity() {
         if (customActive) {
             ShizukuOverlayController.stop(
                 this,
-                restoreSystemBar = false
+                restoreSystemBar = true
             ) {
                 customActive = false
                 busy = false
