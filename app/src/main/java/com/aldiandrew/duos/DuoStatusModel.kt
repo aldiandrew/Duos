@@ -19,15 +19,15 @@ data class DuoStatusState(
     val networkGeneration: String = "",
     val airplane: Boolean = false,
     val dnd: Boolean = false,
-    val foregroundColor: Int = Color.WHITE
+    val foregroundColor: Int = Color.WHITE,
+    val batteryColorOverride: Int? = null
 ) {
+    /**
+     * Default is the same black/white foreground used by SystemUI.
+     * A user-selected color overrides it for every battery state, including charging.
+     */
     val batteryColor: Int
-        get() = when {
-            charging -> Color.rgb(52, 199, 89)
-            powerSaver -> Color.rgb(255, 204, 0)
-            batteryLevel <= 15 -> Color.rgb(255, 59, 48)
-            else -> foregroundColor
-        }
+        get() = batteryColorOverride ?: foregroundColor
 }
 
 /**
