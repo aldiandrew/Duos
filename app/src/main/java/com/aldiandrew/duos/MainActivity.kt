@@ -33,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 
@@ -71,6 +72,16 @@ class MainActivity : ComponentActivity() {
         }
 
         refreshShizuku()
+
+        if (!getSharedPreferences("duos", MODE_PRIVATE)
+                .getBoolean("enabled", false)
+        ) {
+            lifecycleScope.launch {
+                if (ShizukuManager.hasPermission()) {
+                    StatusBarHider.restore()
+                }
+            }
+        }
 
         if (Build.VERSION.SDK_INT >= 33) {
             notificationPermissionLauncher.launch(
