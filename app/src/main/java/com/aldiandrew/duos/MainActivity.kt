@@ -2,6 +2,7 @@ package com.aldiandrew.duos
 
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -15,12 +16,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -116,7 +130,24 @@ class MainActivity : ComponentActivity() {
         loadPreferences()
 
         setContent {
-            MaterialTheme {
+            val darkTheme = isSystemInDarkTheme()
+            val colorScheme = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                if (darkTheme) {
+                    dynamicDarkColorScheme(this)
+                } else {
+                    dynamicLightColorScheme(this)
+                }
+            } else {
+                if (darkTheme) {
+                    darkColorScheme()
+                } else {
+                    lightColorScheme()
+                }
+            }
+
+            MaterialExpressiveTheme(
+                colorScheme = colorScheme
+            ) {
                 Surface(Modifier.fillMaxSize()) {
                     MainScreen()
                 }
@@ -129,7 +160,8 @@ class MainActivity : ComponentActivity() {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(20.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             Text("Duos", style = MaterialTheme.typography.headlineMedium)
@@ -140,7 +172,7 @@ class MainActivity : ComponentActivity() {
                     "while Duos replaces only the native system-icon group with the Duo indicator."
             )
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "Shizuku: " + if (shizukuAvailable) "READY" else "NOT READY",
@@ -160,7 +192,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "Custom Status Bar: " +
@@ -179,7 +211,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Button(
+            FilledTonalButton(
                 enabled = shizukuAvailable && shizukuPermission && !busy,
                 onClick = { toggleCustomStatusBar() },
                 modifier = Modifier.fillMaxWidth()
@@ -193,7 +225,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "Indicator Size & Position",
@@ -227,17 +259,16 @@ class MainActivity : ComponentActivity() {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Automatic")
-                        Button(
-                            onClick = {
-                                automaticPosition = !automaticPosition
+                        Switch(
+                            checked = automaticPosition,
+                            onCheckedChange = {
+                                automaticPosition = it
                                 DuoPreferences.setAutomaticPosition(
                                     this@MainActivity,
-                                    automaticPosition
+                                    it
                                 )
                             }
-                        ) {
-                            Text(if (automaticPosition) "ON" else "OFF")
-                        }
+                        )
                     }
 
                     Text(
@@ -284,7 +315,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    Button(
+                    OutlinedButton(
                         onClick = {
                             DuoPreferences.resetPosition(this@MainActivity)
                             automaticPosition = true
@@ -298,7 +329,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "Indicator Style",
@@ -374,7 +405,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "Indicator Colors",
@@ -501,7 +532,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            Card(modifier = Modifier.fillMaxWidth()) {
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "Configuration",
@@ -576,14 +607,14 @@ class MainActivity : ComponentActivity() {
         modifier: Modifier = Modifier,
         onClick: () -> Unit
     ) {
-        Button(
+        FilterChip(
+            selected = selected,
             onClick = onClick,
+            label = {
+                Text(label)
+            },
             modifier = modifier
-        ) {
-            Text(
-                if (selected) "✓ $label" else label
-            )
-        }
+        )
     }
 
     @Composable
