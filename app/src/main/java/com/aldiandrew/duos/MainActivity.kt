@@ -2,224 +2,187 @@ package com.aldiandrew.duos
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.net.Uri
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
+import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
+    private var shizukuAvailable by mutableStateOf(false)
+    private var shizukuPermission by mutableStateOf(false)
 
+    private val binderReceived = Shizuku.OnBinderReceivedListener { refreshShizuku() }
+    private val binderDead = Shizuku.OnBinderDeadListener { refreshShizuku() }
+    private val permissionResult = Shizuku.OnRequestPermissionResultListener { code, _ ->
+        if (code == ShizukuManager.REQUEST_CODE) refreshShizuku()
+    }
     private val notificationPermissionLauncher =
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        try {
+            Shizuku.addBinderReceivedListenerSticky(binderReceived)
+            Shizuku.addBinderDeadListener(binderDead)
+            Shizuku.addRequestPermissionResultListener(permissionResult)
+        } catch (_: Throwable) {}
+        refreshShizuku()
         if (Build.VERSION.SDK_INT >= 33) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
-
         setContent {
             MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    MainScreen()
-                }
+                Surface(Modifier.fillMaxSize()) { MainScreen() }
             }
         }
     }
 
     @Composable
     private fun MainScreen() {
+        val scope = rememberCoroutineScope()
         var overlayGranted by remember { mutableStateOf(Settings.canDrawOverlays(this)) }
-        var secureGranted by remember {
-            mutableStateOf(StatusBarHider.isWriteSecureSettingsAvailable(this))
-        }
-        var active by remember { mutableStateOf(StatusBarHider.isHidden(this)) }
+        var active by remember { mutableStateOf(false) }
 
-        LaunchedEffect(Unit) {
+        LaunchedEffect(shizukuAvailable, shizukuPermission) {
             overlayGranted = Settings.canDrawOverlays(this@MainActivity)
-            secureGranted = StatusBarHider.isWriteSecureSettingsAvailable(this@MainActivity)
-            active = StatusBarHider.isHidden(this@MainActivity)
+            active = shizukuAvailable && shizukuPermission && ImmersiveController.isHidden()
         }
 
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(20.dp),
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = "Duos",
-                style = MaterialTheme.typography.headlineMedium
-            )
-            Text(
-                text = "Custom Status Bar",
-                style = MaterialTheme.typography.titleLarge
-            )
-            Text(
-                text = "No root and no Xposed. Duos uses an application overlay for the custom UI and the ADB-granted WRITE_SECURE_SETTINGS permission for the CleanBar-style immersive policy."
-            )
+            Text("Duos", style = MaterialTheme.typography.headlineMedium)
+            Text("Custom Status Bar", style = MaterialTheme.typography.titleLarge)
+            Text("Duos uses Shizuku like CleanBar. Shizuku executes the privileged SystemUI/settings commands. No root and no ADB WRITE_SECURE_SETTINGS grant is required.")
 
-            StatusCard(
-                title = "Draw over other apps",
-                ok = overlayGranted,
-                description = "Required for the custom status bar to appear above other apps."
-            )
+            StatusCard("Shizuku", shizukuAvailable,
+                if (shizukuAvailable) "Shizuku service detected." else "Start Shizuku first.")
+            if (!shizukuAvailable) {
+                Button(
+                    onClick = {
+                        try {
+                            startActivity(Intent("moe.shizuku.manager.ACTION_SETTINGS"))
+                        } catch (_: Throwable) {
+                            Toast.makeText(this@MainActivity, "Open Shizuku manually and start the service.", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    Modifier.fillMaxWidth()
+                ) { Text("Open Shizuku") }
+            }
 
+            StatusCard("Duos permission", shizukuPermission,
+                if (shizukuPermission) "Authorized." else "Authorization is required.")
+            if (shizukuAvailable && !shizukuPermission) {
+                Button(
+                    onClick = { ShizukuManager.requestPermission(permissionResult) },
+                    Modifier.fillMaxWidth()
+                ) { Text("Authorize Duos in Shizuku") }
+            }
+
+            StatusCard("Overlay", overlayGranted,
+                "Required for the custom status bar UI.")
             if (!overlayGranted) {
                 Button(
                     onClick = {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:" + packageName)
-                            )
-                        )
+                        startActivity(Intent(
+                            Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                            Uri.parse("package:$packageName")
+                        ))
                     },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Grant Overlay Permission")
-                }
-            }
-
-            StatusCard(
-                title = "ADB secure-settings access",
-                ok = secureGranted,
-                description = "Android does not provide a normal runtime dialog for WRITE_SECURE_SETTINGS."
-            )
-
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Run once from ADB:",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = "adb shell pm grant " +
-                            packageName +
-                            " android.permission.WRITE_SECURE_SETTINGS",
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                    Text(
-                        text = "After the command succeeds, return to Duos and tap Refresh."
-                    )
-                }
-            }
-
-            OutlinedButton(
-                onClick = {
-                    secureGranted =
-                        StatusBarHider.isWriteSecureSettingsAvailable(this@MainActivity)
-                    overlayGranted = Settings.canDrawOverlays(this@MainActivity)
-                    active = StatusBarHider.isHidden(this@MainActivity)
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Refresh Permissions")
+                    Modifier.fillMaxWidth()
+                ) { Text("Grant Overlay Permission") }
             }
 
             Button(
-                enabled = overlayGranted && secureGranted,
+                enabled = shizukuAvailable && shizukuPermission && overlayGranted,
                 onClick = {
-                    val result = StatusBarHider.hide(this@MainActivity)
-                    if (result.isFailure) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            result.exceptionOrNull()?.message ?: "Could not hide status bar",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        return@Button
+                    scope.launch {
+                        val result = if (active) {
+                            ImmersiveController.restoreStatusBar()
+                        } else {
+                            ImmersiveController.hideStatusBar()
+                        }
+                        if (result.isFailure) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                result.exceptionOrNull()?.message ?: "Command failed",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@launch
+                        }
+                        if (!active) {
+                            ContextCompat.startForegroundService(
+                                this@MainActivity,
+                                Intent(this@MainActivity, StatusBarService::class.java)
+                            )
+                        } else {
+                            startService(
+                                Intent(this@MainActivity, StatusBarService::class.java).apply {
+                                    action = StatusBarService.ACTION_STOP
+                                }
+                            )
+                        }
+                        active = !active
                     }
-
-                    getSharedPreferences("duos", MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("enabled", true)
-                        .apply()
-
-                    ContextCompat.startForegroundService(
-                        this@MainActivity,
-                        Intent(this@MainActivity, StatusBarService::class.java)
-                    )
-                    active = true
                 },
-                modifier = Modifier.fillMaxWidth()
+                Modifier.fillMaxWidth()
             ) {
-                Text(if (active) "Custom Status Bar Running" else "Start Custom Status Bar")
+                Text(if (active) "Stop and Restore Status Bar" else "Start Custom Status Bar")
             }
 
             OutlinedButton(
-                enabled = active,
                 onClick = {
-                    startService(
-                        Intent(this@MainActivity, StatusBarService::class.java).apply {
-                            action = StatusBarService.ACTION_STOP
-                        }
-                    )
-                    StatusBarHider.restore(this@MainActivity)
-                    getSharedPreferences("duos", MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("enabled", false)
-                        .apply()
-                    active = false
+                    refreshShizuku()
+                    overlayGranted = Settings.canDrawOverlays(this@MainActivity)
                 },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Stop and Restore System Status Bar")
-            }
+                Modifier.fillMaxWidth()
+            ) { Text("Refresh") }
 
-            Text(
-                text = "Important: WRITE_SECURE_SETTINGS is an ADB-granted privileged permission. The APK cannot grant itself this permission. Android/OEM versions may also reject or ignore the legacy global policy_control immersive setting; if that happens, an ordinary overlay cannot remove the system status bar by itself."
-            )
+            Text("If Shizuku is stopped or authorization is revoked, Duos cannot execute the privileged status-bar commands.")
         }
     }
 
     @Composable
-    private fun StatusCard(
-        title: String,
-        ok: Boolean,
-        description: String
-    ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Row(modifier = Modifier.padding(16.dp)) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = title + ": " + if (ok) "READY" else "NOT READY",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                    Text(
-                        text = description,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-                }
+    private fun StatusCard(title: String, ok: Boolean, description: String) {
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp)) {
+                Text("\$title: \${if (ok) "READY" else "NOT READY"}", style = MaterialTheme.typography.titleMedium)
+                Text(description, Modifier.padding(top = 4.dp))
             }
         }
+    }
+
+    private fun refreshShizuku() {
+        shizukuAvailable = ShizukuManager.isAvailable()
+        shizukuPermission = ShizukuManager.hasPermission()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshShizuku()
+    }
+
+    override fun onDestroy() {
+        try {
+            Shizuku.removeBinderReceivedListener(binderReceived)
+            Shizuku.removeBinderDeadListener(binderDead)
+            Shizuku.removeRequestPermissionResultListener(permissionResult)
+        } catch (_: Throwable) {}
+        super.onDestroy()
     }
 }
