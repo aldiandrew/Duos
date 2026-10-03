@@ -96,9 +96,17 @@ class DuoIndicatorView(context: Context) : View(context) {
         // even when the WindowManager position itself was correct.
         val safeInset = side * 3f / 36f
         val contentSide = (side - safeInset * 2f).coerceAtLeast(1f)
-        val k = contentSide / DESIGN_SIZE
-        val stroke = STROKE * k
-        val radius = (contentSide - stroke) / 2f
+        val current = state
+        val styleScale = when (current.visualStyle) {
+            DuoVisualStyle.DUO -> 1f
+            DuoVisualStyle.COMPACT -> 0.88f
+            DuoVisualStyle.MINIMAL -> 0.94f
+            DuoVisualStyle.RING -> 1f
+        }
+        val k = (contentSide * styleScale) / DESIGN_SIZE
+        val stroke = STROKE * k *
+            if (current.visualStyle == DuoVisualStyle.COMPACT) 0.9f else 1f
+        val radius = (contentSide * styleScale - stroke) / 2f
         val cx = width / 2f
         val cy = height / 2f
 
@@ -109,13 +117,105 @@ class DuoIndicatorView(context: Context) : View(context) {
             cy + radius
         )
 
-        val current = state
         ringPaint.strokeWidth = stroke
 
-        drawRing(canvas, current, k, arc)
-        drawMiddle(canvas, current, k, cx, cy)
-        drawSignalDots(canvas, current, k, cx, cy)
-        drawBatteryText(canvas, current, k, cx, cy)
+        when (current.visualStyle) {
+            DuoVisualStyle.RING -> {
+                drawRingOnly(
+                    canvas,
+                    current,
+                    k,
+                    arc,
+                    cx,
+                    cy
+                )
+            }
+            else -> {
+                drawRing(canvas, current, k, arc)
+
+                if (current.visualStyle != DuoVisualStyle.MINIMAL) {
+                    drawMiddle(canvas, current, k, cx, cy)
+                    drawSignalDots(canvas, current, k, cx, cy)
+                }
+
+                drawBatteryText(canvas, current, k, cx, cy)
+            }
+        }
+    }
+
+    private fun drawRingOnly(
+        canvas: Canvas,
+        current: DuoStatusState,
+        k: Float,
+        bounds: RectF,
+        cx: Float,
+        cy: Float
+    ) {
+        ringPaint.strokeWidth = STROKE * k
+
+        ringPaint.color = withAlpha(
+            current.foregroundColor,
+            TRACK_ALPHA
+        )
+
+        canvas.drawArc(
+            bounds,
+            -90f,
+            360f,
+            false,
+            ringPaint
+        )
+
+        if (current.charging) {
+            ringPaint.color = current.batteryColor
+            canvas.drawArc(
+                bounds,
+                -90f,
+                360f,
+                false,
+                ringPaint
+            )
+
+            drawBolt(
+                canvas,
+                current.batteryColor,
+                cx,
+                cy,
+                bounds.width()
+            )
+
+            postInvalidateOnAnimation()
+            return
+        }
+
+        val level = current.batteryLevel.coerceIn(0, 100)
+        ringPaint.color = current.batteryColor
+
+        if (level > 0) {
+            canvas.drawArc(
+                bounds,
+                -90f,
+                360f * level / 100f,
+                false,
+                ringPaint
+            )
+        }
+
+        textPaint.color = current.foregroundColor
+        val text = level.toString()
+        textPaint.textSize = (
+            if (text.length >= 3) PERCENT_FONT_3 else PERCENT_FONT
+        ) * k
+
+        val baseline =
+            cy - (textPaint.ascent() + textPaint.descent()) / 2f
+
+        canvas.drawText(
+            text,
+            cx,
+            baseline,
+            textPaint
+        )
     }
 
     private fun drawRing(
