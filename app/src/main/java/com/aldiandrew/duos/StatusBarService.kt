@@ -9,8 +9,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
@@ -248,7 +246,8 @@ class StatusBarService : Service() {
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                 WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP
@@ -256,6 +255,9 @@ class StatusBarService : Service() {
             if (Build.VERSION.SDK_INT >= 28) {
                 layoutInDisplayCutoutMode =
                     WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            }
+            if (Build.VERSION.SDK_INT >= 30) {
+                setFitInsetsTypes(0)
             }
         }
 
@@ -375,21 +377,6 @@ class StatusBarService : Service() {
             level * 100 / scale
         } else {
             0
-        }
-    }
-
-    private fun networkLabel(): String {
-        val manager =
-            getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-
-        val network = manager.activeNetwork ?: return "Offline"
-        val caps =
-            manager.getNetworkCapabilities(network) ?: return "Offline"
-
-        return when {
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
-            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Mobile"
-            else -> "Online"
         }
     }
 
