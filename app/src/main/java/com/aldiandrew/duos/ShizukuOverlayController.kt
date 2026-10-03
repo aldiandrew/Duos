@@ -55,6 +55,7 @@ object ShizukuOverlayController {
                 enableOverlayPermission(context)
 
             if (overlayPermission.isFailure) {
+                SystemBarController.restore()
                 callbackOnMain(
                     callback,
                     false,
@@ -77,6 +78,7 @@ object ShizukuOverlayController {
                     context.startService(intent)
                 }
             } catch (t: Throwable) {
+                SystemBarController.restore()
                 callbackOnMain(
                     callback,
                     false,
