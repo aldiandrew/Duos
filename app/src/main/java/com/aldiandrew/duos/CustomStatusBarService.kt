@@ -333,7 +333,17 @@ class CustomStatusBarService : Service() {
             foregroundColor =
                 foregroundOverride
                     ?: if (isNightMode()) Color.WHITE else Color.BLACK,
-            batteryColorOverride = DuoPreferences.getBatteryColorOverride(this)
+            batteryNormalColorOverride =
+                DuoPreferences.getBatteryNormalColorOverride(this),
+            batteryChargingColorOverride =
+                DuoPreferences.getBatteryChargingColorOverride(this),
+            batteryLowColorOverride =
+                DuoPreferences.getBatteryLowColorOverride(this),
+            batteryPowerSaverColorOverride =
+                DuoPreferences.getBatteryPowerSaverColorOverride(this),
+            wifiColorOverride = DuoPreferences.getWifiColorOverride(this),
+            signalColorOverride = DuoPreferences.getSignalColorOverride(this),
+            networkColorOverride = DuoPreferences.getNetworkColorOverride(this)
         )
     }
 
