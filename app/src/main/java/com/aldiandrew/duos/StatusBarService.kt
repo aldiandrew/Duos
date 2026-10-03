@@ -105,11 +105,10 @@ class StatusBarService : Service() {
             showOverlay()
 
             if (overlayView != null) {
-                    getSharedPreferences(PREFS, MODE_PRIVATE)
-                        .edit()
-                        .putBoolean("enabled", true)
-                        .apply()
-                }
+                getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("enabled", true)
+                    .apply()
             }
         }
     }
