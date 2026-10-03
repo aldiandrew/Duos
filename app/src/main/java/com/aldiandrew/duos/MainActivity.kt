@@ -182,8 +182,11 @@ class MainActivity : ComponentActivity() {
                     !starting,
                 onClick = {
                     if (active) {
-                        ShizukuOverlayController.stop()
-                        active = false
+                        starting = true
+                        ShizukuOverlayController.stop {
+                            active = false
+                            starting = false
+                        }
                     } else {
                         starting = true
 
