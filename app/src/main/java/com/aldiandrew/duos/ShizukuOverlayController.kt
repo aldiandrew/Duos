@@ -36,27 +36,28 @@ object ShizukuOverlayController {
             return
         }
 
-        try {
-            if (binder?.isReady() == true) {
-                callback(true, "")
-                return
-            }
-        } catch (_: Throwable) {
-            binder = null
-        }
-
         scope.launch {
-            val hideResult = SystemBarController.hide()
-
-            if (hideResult.isFailure) {
+            // This operation intentionally does NOT hide the native status bar.
+            // The UI must complete that as a separate step first.
+            if (!SystemBarController.isHidden()) {
                 mainHandler.post {
                     callback(
                         false,
-                        hideResult.exceptionOrNull()?.message
-                            ?: "Could not hide the system status bar"
+                        "Hide the system status bar first."
                     )
                 }
                 return@launch
+            }
+
+            try {
+                if (binder?.isReady() == true) {
+                    mainHandler.post {
+                        callback(true, "")
+                    }
+                    return@launch
+                }
+            } catch (_: Throwable) {
+                binder = null
             }
 
             val component = ComponentName(
@@ -109,10 +110,6 @@ object ShizukuOverlayController {
                             binder = null
                             args = null
                             connection = null
-
-                            scope.launch {
-                                SystemBarController.restore()
-                            }
                         }
 
                         mainHandler.post {
@@ -120,10 +117,6 @@ object ShizukuOverlayController {
                         }
                     } catch (t: Throwable) {
                         binder = null
-
-                        scope.launch {
-                            SystemBarController.restore()
-                        }
 
                         mainHandler.post {
                             callback(
@@ -162,8 +155,6 @@ object ShizukuOverlayController {
                 args = null
                 connection = null
 
-                SystemBarController.restore()
-
                 mainHandler.post {
                     callback(
                         false,
@@ -175,7 +166,10 @@ object ShizukuOverlayController {
         }
     }
 
-    fun stop(callback: (() -> Unit)? = null) {
+    fun stop(
+        restoreSystemBar: Boolean = false,
+        callback: (() -> Unit)? = null
+    ) {
         val serviceArgs = args
         val serviceConnection = connection
 
@@ -195,7 +189,9 @@ object ShizukuOverlayController {
             } catch (_: Throwable) {
             }
 
-            SystemBarController.restore()
+            if (restoreSystemBar) {
+                SystemBarController.restore()
+            }
 
             mainHandler.post {
                 callback?.invoke()
