@@ -22,9 +22,15 @@ object ShizukuManager {
     fun requestPermission(listener: Shizuku.OnRequestPermissionResultListener) {
         if (!isAvailable() || Shizuku.isPreV11()) return
         try {
+            Shizuku.removeRequestPermissionResultListener(listener)
+        } catch (_: Throwable) {
+        }
+
+        try {
             Shizuku.addRequestPermissionResultListener(listener)
             Shizuku.requestPermission(REQUEST_CODE)
-        } catch (_: Throwable) {}
+        } catch (_: Throwable) {
+        }
     }
 
     suspend fun executeCommand(command: String): Result<String> = withContext(Dispatchers.IO) {
