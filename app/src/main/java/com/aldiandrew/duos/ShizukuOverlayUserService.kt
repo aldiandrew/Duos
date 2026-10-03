@@ -7,6 +7,8 @@ import android.os.Handler
 import android.os.Looper
 import android.os.Parcel
 import android.os.Build
+import android.os.Process
+import android.util.Log
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -21,6 +23,7 @@ import java.util.Locale
 class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stub() {
 
     companion object {
+        private const val TAG = "duos_overlay"
         private const val DESTROY_TRANSACTION = 16777115
     }
 
@@ -49,7 +52,8 @@ class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stu
         try {
             createOverlay()
         } catch (t: Throwable) {
-            errorMessage = t.toString()
+            errorMessage = t.stackTraceToString()
+            Log.e(TAG, "createOverlay() failed: uid=${Process.myUid()} pid=${Process.myPid()}", t)
             ready = false
         }
     }
@@ -159,7 +163,9 @@ class ShizukuOverlayUserService(private val context: Context) : IDuosOverlay.Stu
             )
         )
 
+        Log.i(TAG, "Adding custom status bar window: type=${params.type}, width=${params.width}, height=${params.height}, uid=${Process.myUid()}")
         windowManager?.addView(container, params)
+        Log.i(TAG, "Custom status bar window added successfully")
         rootView = container
 
         updateText()
