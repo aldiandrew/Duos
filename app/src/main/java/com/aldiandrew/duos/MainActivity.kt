@@ -134,8 +134,8 @@ class MainActivity : ComponentActivity() {
                     )
                     Text(
                         when {
-                            systemBarHidden && customActive ->
-                                "Native status bar is hidden and the custom bar is visible."
+                            customActive ->
+                                "Native status-bar shell is visible. Clock and notifications stay native; Duo replaces system icons."
                             systemBarHidden ->
                                 "Native status bar is hidden. Custom bar can now be shown."
                             else ->
@@ -274,9 +274,16 @@ class MainActivity : ComponentActivity() {
                 return@launch
             }
 
+            val custom = ShizukuOverlayController.isBound()
             val hidden = SystemBarController.isHidden()
-            systemBarHidden = hidden
-            customActive = ShizukuOverlayController.isBound()
+
+            customActive = custom
+
+            // During hybrid custom mode the native status-bar window is visible,
+            // but the native system-icon group is intentionally disabled. Keep
+            // the UI state in "custom mode" rather than treating that as a normal
+            // visible status bar, otherwise the custom-bar button becomes disabled.
+            systemBarHidden = custom || hidden
         }
     }
 
