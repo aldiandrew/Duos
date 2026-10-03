@@ -302,7 +302,8 @@ class CustomStatusBarService : Service() {
             dnd = dnd,
             foregroundColor =
                 foregroundOverride
-                    ?: if (isNightMode()) Color.WHITE else Color.BLACK
+                    ?: if (isNightMode()) Color.WHITE else Color.BLACK,
+            batteryColorOverride = DuoPreferences.getBatteryColorOverride(this)
         )
     }
 
@@ -512,7 +513,7 @@ class CustomStatusBarService : Service() {
             ) == Configuration.UI_MODE_NIGHT_YES
 
     private fun compactSizePx(): Int =
-        dp(30f).coerceAtLeast(1)
+        dp(36f).coerceAtLeast(1)
 
     private fun applyDynamicOverlayPosition(
         view: View,
