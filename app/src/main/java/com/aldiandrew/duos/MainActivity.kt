@@ -25,7 +25,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color as ComposeColor
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
@@ -37,13 +36,20 @@ class MainActivity : ComponentActivity() {
     private var shizukuPermission by mutableStateOf(false)
     private var customActive by mutableStateOf(false)
     private var busy by mutableStateOf(false)
-    private var batteryColorHex by mutableStateOf("")
-    private var batteryColorError by mutableStateOf("")
+    private var permissionRequesting = false
+
     private var indicatorSizeDp by mutableStateOf(36f)
     private var automaticPosition by mutableStateOf(true)
     private var horizontalOffsetDp by mutableStateOf(0f)
     private var verticalOffsetDp by mutableStateOf(0f)
-    private var permissionRequesting = false
+
+    private var batteryNormalHex by mutableStateOf("")
+    private var batteryChargingHex by mutableStateOf("")
+    private var batteryLowHex by mutableStateOf("")
+    private var batteryPowerSaverHex by mutableStateOf("")
+    private var wifiColorHex by mutableStateOf("")
+    private var signalColorHex by mutableStateOf("")
+    private var networkColorHex by mutableStateOf("")
 
     private val binderReceived =
         Shizuku.OnBinderReceivedListener {
@@ -84,15 +90,7 @@ class MainActivity : ComponentActivity() {
         requestShizukuPermissionIfNeeded()
 
         customActive = ShizukuOverlayController.isBound()
-        batteryColorHex =
-            DuoPreferences.getBatteryColorOverride(this)?.let {
-                DuoPreferences.colorToHex(it)
-            } ?: ""
-
-        indicatorSizeDp = DuoPreferences.getIndicatorSizeDp(this)
-        automaticPosition = DuoPreferences.isAutomaticPosition(this)
-        horizontalOffsetDp = DuoPreferences.getHorizontalOffsetDp(this)
-        verticalOffsetDp = DuoPreferences.getVerticalOffsetDp(this)
+        loadPreferences()
 
         setContent {
             MaterialTheme {
@@ -111,15 +109,8 @@ class MainActivity : ComponentActivity() {
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                "Duos",
-                style = MaterialTheme.typography.headlineMedium
-            )
-
-            Text(
-                "Custom Status Bar",
-                style = MaterialTheme.typography.titleLarge
-            )
+            Text("Duos", style = MaterialTheme.typography.headlineMedium)
+            Text("Custom Status Bar", style = MaterialTheme.typography.titleLarge)
 
             Text(
                 "Hybrid mode keeps the native SystemUI clock and notification icons, " +
@@ -166,10 +157,7 @@ class MainActivity : ComponentActivity() {
             }
 
             Button(
-                enabled =
-                    shizukuAvailable &&
-                        shizukuPermission &&
-                        !busy,
+                enabled = shizukuAvailable && shizukuPermission && !busy,
                 onClick = { toggleCustomStatusBar() },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -198,10 +186,7 @@ class MainActivity : ComponentActivity() {
                         value = indicatorSizeDp,
                         onValueChange = {
                             indicatorSizeDp = it
-                            DuoPreferences.setIndicatorSizeDp(
-                                this@MainActivity,
-                                it
-                            )
+                            DuoPreferences.setIndicatorSizeDp(this@MainActivity, it)
                         },
                         valueRange = 28f..60f,
                         steps = 31,
@@ -215,9 +200,7 @@ class MainActivity : ComponentActivity() {
                     )
 
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         Text("Automatic")
@@ -244,10 +227,7 @@ class MainActivity : ComponentActivity() {
                         onValueChange = {
                             horizontalOffsetDp = it
                             automaticPosition = false
-                            DuoPreferences.setHorizontalOffsetDp(
-                                this@MainActivity,
-                                it
-                            )
+                            DuoPreferences.setHorizontalOffsetDp(this@MainActivity, it)
                             DuoPreferences.setAutomaticPosition(
                                 this@MainActivity,
                                 false
@@ -269,10 +249,7 @@ class MainActivity : ComponentActivity() {
                         onValueChange = {
                             verticalOffsetDp = it
                             automaticPosition = false
-                            DuoPreferences.setVerticalOffsetDp(
-                                this@MainActivity,
-                                it
-                            )
+                            DuoPreferences.setVerticalOffsetDp(this@MainActivity, it)
                             DuoPreferences.setAutomaticPosition(
                                 this@MainActivity,
                                 false
@@ -297,96 +274,131 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
+
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
-                        "Battery Color",
+                        "Indicator Colors",
                         style = MaterialTheme.typography.titleMedium
                     )
 
                     Text(
-                        "Default follows the SystemUI icon color. Set a custom HEX color " +
-                            "to use your own battery-ring color, including while charging.",
+                        "Leave any field empty and press SystemUI to follow the native icon color.",
                         modifier = Modifier.padding(top = 4.dp)
                     )
 
-                    OutlinedTextField(
-                        value = batteryColorHex,
-                        onValueChange = {
-                            batteryColorHex = it
-                            batteryColorError = ""
+                    ColorSetting(
+                        title = "Battery — Normal",
+                        value = batteryNormalHex,
+                        onValueChange = { batteryNormalHex = it },
+                        onApply = {
+                            parseColorOrNull(batteryNormalHex)?.let {
+                                DuoPreferences.setBatteryNormalColor(this@MainActivity, it)
+                                batteryNormalHex = DuoPreferences.colorToHex(it)
+                            }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        singleLine = true,
-                        label = { Text("HEX, e.g. #FF6B00") },
-                        isError = batteryColorError.isNotBlank(),
-                        supportingText = {
-                            Text(
-                                batteryColorError.ifBlank {
-                                    "Leave empty to match SystemUI."
-                                }
-                            )
+                        onSystemUi = {
+                            DuoPreferences.clearBatteryNormalColor(this@MainActivity)
+                            batteryNormalHex = ""
+                        },
+                        modifier = Modifier.padding(top = 10.dp)
+                    )
+
+                    ColorSetting(
+                        title = "Battery — Charging",
+                        value = batteryChargingHex,
+                        onValueChange = { batteryChargingHex = it },
+                        onApply = {
+                            parseColorOrNull(batteryChargingHex)?.let {
+                                DuoPreferences.setBatteryChargingColor(this@MainActivity, it)
+                                batteryChargingHex = DuoPreferences.colorToHex(it)
+                            }
+                        },
+                        onSystemUi = {
+                            DuoPreferences.clearBatteryChargingColor(this@MainActivity)
+                            batteryChargingHex = ""
                         }
                     )
 
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        horizontalArrangement = Arrangement.End
-                    ) {
-                        Button(
-                            enabled = batteryColorHex.isNotBlank() &&
-                                parseBatteryColor(batteryColorHex) != null,
-                            onClick = {
-                                val parsed = parseBatteryColor(batteryColorHex)
-                                if (parsed == null) {
-                                    batteryColorError =
-                                        "Enter a valid color such as #FF6B00."
-                                } else {
-                                    DuoPreferences.setBatteryColor(this@MainActivity, parsed)
-                                    batteryColorHex = DuoPreferences.colorToHex(parsed)
-                                    batteryColorError = ""
-                                }
+                    ColorSetting(
+                        title = "Battery — Low",
+                        value = batteryLowHex,
+                        onValueChange = { batteryLowHex = it },
+                        onApply = {
+                            parseColorOrNull(batteryLowHex)?.let {
+                                DuoPreferences.setBatteryLowColor(this@MainActivity, it)
+                                batteryLowHex = DuoPreferences.colorToHex(it)
                             }
-                        ) {
-                            Text("Apply")
+                        },
+                        onSystemUi = {
+                            DuoPreferences.clearBatteryLowColor(this@MainActivity)
+                            batteryLowHex = ""
                         }
+                    )
 
-                        Spacer(Modifier.width(8.dp))
-
-                        Button(
-                            onClick = {
-                                DuoPreferences.clearBatteryColor(this@MainActivity)
-                                batteryColorHex = ""
-                                batteryColorError = ""
+                    ColorSetting(
+                        title = "Battery — Power Saver",
+                        value = batteryPowerSaverHex,
+                        onValueChange = { batteryPowerSaverHex = it },
+                        onApply = {
+                            parseColorOrNull(batteryPowerSaverHex)?.let {
+                                DuoPreferences.setBatteryPowerSaverColor(this@MainActivity, it)
+                                batteryPowerSaverHex = DuoPreferences.colorToHex(it)
                             }
-                        ) {
-                            Text("SystemUI")
+                        },
+                        onSystemUi = {
+                            DuoPreferences.clearBatteryPowerSaverColor(this@MainActivity)
+                            batteryPowerSaverHex = ""
                         }
-                    }
+                    )
 
-                    val preview = parseBatteryColor(batteryColorHex)
-                    if (preview != null) {
-                        Surface(
-                            color = ComposeColor(preview),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 10.dp)
-                        ) {
-                            Text(
-                                DuoPreferences.colorToHex(preview),
-                                color = if (isDarkPreview(preview)) {
-                                    ComposeColor.White
-                                } else {
-                                    ComposeColor.Black
-                                },
-                                modifier = Modifier.padding(10.dp)
-                            )
+                    ColorSetting(
+                        title = "Wi-Fi",
+                        value = wifiColorHex,
+                        onValueChange = { wifiColorHex = it },
+                        onApply = {
+                            parseColorOrNull(wifiColorHex)?.let {
+                                DuoPreferences.setWifiColor(this@MainActivity, it)
+                                wifiColorHex = DuoPreferences.colorToHex(it)
+                            }
+                        },
+                        onSystemUi = {
+                            DuoPreferences.clearWifiColor(this@MainActivity)
+                            wifiColorHex = ""
                         }
-                    }
+                    )
+
+                    ColorSetting(
+                        title = "Signal",
+                        value = signalColorHex,
+                        onValueChange = { signalColorHex = it },
+                        onApply = {
+                            parseColorOrNull(signalColorHex)?.let {
+                                DuoPreferences.setSignalColor(this@MainActivity, it)
+                                signalColorHex = DuoPreferences.colorToHex(it)
+                            }
+                        },
+                        onSystemUi = {
+                            DuoPreferences.clearSignalColor(this@MainActivity)
+                            signalColorHex = ""
+                        }
+                    )
+
+                    ColorSetting(
+                        title = "Network",
+                        value = networkColorHex,
+                        onValueChange = { networkColorHex = it },
+                        onApply = {
+                            parseColorOrNull(networkColorHex)?.let {
+                                DuoPreferences.setNetworkColor(this@MainActivity, it)
+                                networkColorHex = DuoPreferences.colorToHex(it)
+                            }
+                        },
+                        onSystemUi = {
+                            DuoPreferences.clearNetworkColor(this@MainActivity)
+                            networkColorHex = ""
+                        }
+                    )
                 }
             }
 
@@ -395,6 +407,106 @@ class MainActivity : ComponentActivity() {
                     "control layer for the SystemUI flags and overlay AppOp. If the custom " +
                     "service stops or fails, the native status bar is restored automatically."
             )
+        }
+    }
+
+    @Composable
+    private fun ColorSetting(
+        title: String,
+        value: String,
+        onValueChange: (String) -> Unit,
+        onApply: () -> Unit,
+        onSystemUi: () -> Unit,
+        modifier: Modifier = Modifier
+    ) {
+        Column(modifier = modifier) {
+            Text(title, style = MaterialTheme.typography.titleSmall)
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    modifier = Modifier.weight(1f),
+                    singleLine = true,
+                    label = { Text("HEX") }
+                )
+
+                Column {
+                    Button(
+                        enabled = parseColorOrNull(value) != null,
+                        onClick = onApply
+                    ) {
+                        Text("Apply")
+                    }
+
+                    Button(onClick = onSystemUi) {
+                        Text("SystemUI")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun loadPreferences() {
+        batteryNormalHex =
+            DuoPreferences.getBatteryNormalColorOverride(this)?.let {
+                DuoPreferences.colorToHex(it)
+            } ?: ""
+
+        batteryChargingHex =
+            DuoPreferences.getBatteryChargingColorOverride(this)?.let {
+                DuoPreferences.colorToHex(it)
+            } ?: ""
+
+        batteryLowHex =
+            DuoPreferences.getBatteryLowColorOverride(this)?.let {
+                DuoPreferences.colorToHex(it)
+            } ?: ""
+
+        batteryPowerSaverHex =
+            DuoPreferences.getBatteryPowerSaverColorOverride(this)?.let {
+                DuoPreferences.colorToHex(it)
+            } ?: ""
+
+        wifiColorHex =
+            DuoPreferences.getWifiColorOverride(this)?.let {
+                DuoPreferences.colorToHex(it)
+            } ?: ""
+
+        signalColorHex =
+            DuoPreferences.getSignalColorOverride(this)?.let {
+                DuoPreferences.colorToHex(it)
+            } ?: ""
+
+        networkColorHex =
+            DuoPreferences.getNetworkColorOverride(this)?.let {
+                DuoPreferences.colorToHex(it)
+            } ?: ""
+
+        indicatorSizeDp = DuoPreferences.getIndicatorSizeDp(this)
+        automaticPosition = DuoPreferences.isAutomaticPosition(this)
+        horizontalOffsetDp = DuoPreferences.getHorizontalOffsetDp(this)
+        verticalOffsetDp = DuoPreferences.getVerticalOffsetDp(this)
+    }
+
+    private fun parseColorOrNull(value: String): Int? {
+        val normalized = value.trim().let {
+            if (it.startsWith("#")) it else "#$it"
+        }
+
+        if (!normalized.matches(Regex("#[0-9A-Fa-f]{6}"))) {
+            return null
+        }
+
+        return try {
+            Color.parseColor(normalized)
+        } catch (_: IllegalArgumentException) {
+            null
         }
     }
 
@@ -456,38 +568,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun parseBatteryColor(value: String): Int? {
-        val normalized = value.trim().let {
-            if (it.startsWith("#")) it else "#$it"
-        }
-
-        if (!normalized.matches(Regex("#[0-9A-Fa-f]{6}"))) {
-            return null
-        }
-
-        return try {
-            Color.parseColor(normalized)
-        } catch (_: IllegalArgumentException) {
-            null
-        }
-    }
-
-    private fun isDarkPreview(color: Int): Boolean {
-        val r = Color.red(color)
-        val g = Color.green(color)
-        val b = Color.blue(color)
-
-        val luminance =
-            (0.299 * r) + (0.587 * g) + (0.114 * b)
-
-        return luminance < 150.0
-    }
-
     private fun showError(message: String) {
         Toast.makeText(
             this,
-            message.lineSequence().firstOrNull()
-                ?: "Unknown error",
+            message.lineSequence().firstOrNull() ?: "Unknown error",
             Toast.LENGTH_LONG
         ).show()
     }
