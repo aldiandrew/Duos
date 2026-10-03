@@ -27,9 +27,15 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android 37 SDK packages
+      - name: Install Android CLI
         run: |
-          sdkmanager "platforms;android-37" "build-tools;36.0.0"
+          curl -fsSL https://dl.google.com/android/cli/latest/linux_x86_64/install.sh | bash
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Install Android 17 SDK
+        run: |
+          android --version
+          android --sdk="${ANDROID_HOME}" sdk install --canary platforms/android-37
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v5
