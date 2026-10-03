@@ -343,7 +343,8 @@ class CustomStatusBarService : Service() {
                 DuoPreferences.getBatteryPowerSaverColorOverride(this),
             wifiColorOverride = DuoPreferences.getWifiColorOverride(this),
             signalColorOverride = DuoPreferences.getSignalColorOverride(this),
-            networkColorOverride = DuoPreferences.getNetworkColorOverride(this)
+            networkColorOverride = DuoPreferences.getNetworkColorOverride(this),
+            visualStyle = DuoPreferences.getVisualStyle(this)
         )
     }
 
