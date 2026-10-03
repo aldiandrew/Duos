@@ -6,7 +6,9 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.view.View
+import android.os.SystemClock
 import kotlin.math.min
+import kotlin.math.sin
 
 /**
  * Compact Canvas renderer for Duos' custom status bar.
@@ -134,20 +136,30 @@ class DuoIndicatorView(context: Context) : View(context) {
         canvas.drawArc(bounds, leftStartDeg, halfArcDeg, false, ringPaint)
         canvas.drawArc(bounds, rightStartDeg, halfArcDeg, false, ringPaint)
 
-        ringPaint.color = current.batteryColor
-
         if (current.charging) {
+            val pulse = chargingPulse()
+            ringPaint.color = withAlpha(
+                current.batteryColor,
+                pulse
+            )
             canvas.drawArc(bounds, leftStartDeg, halfArcDeg, false, ringPaint)
             canvas.drawArc(bounds, rightStartDeg, halfArcDeg, false, ringPaint)
+
             drawBolt(
                 canvas,
                 current.batteryColor,
                 bounds.centerX(),
                 bounds.centerY(),
-                bounds.width()
+                bounds.width(),
+                pulse
             )
+
+            // Keep the charging animation running only while charging.
+            postInvalidateOnAnimation()
             return
         }
+
+        ringPaint.color = current.batteryColor
 
         val level = current.batteryLevel.coerceIn(0, 100)
 
@@ -418,9 +430,10 @@ class DuoIndicatorView(context: Context) : View(context) {
         color: Int,
         cx: Float,
         cy: Float,
-        diameter: Float
+        diameter: Float,
+        opacity: Float = 1f
     ) {
-        fillPaint.color = color
+        fillPaint.color = withAlpha(color, opacity)
         canvas.save()
         canvas.translate(cx, cy)
 
@@ -441,6 +454,17 @@ class DuoIndicatorView(context: Context) : View(context) {
 
         canvas.drawPath(path, fillPaint)
         canvas.restore()
+    }
+
+    private fun chargingPulse(): Float {
+        val cycleMs = 1400L
+        val phase =
+            (SystemClock.uptimeMillis() % cycleMs).toFloat() /
+                cycleMs
+        val wave =
+            ((sin(phase * 2.0 * Math.PI) + 1.0) / 2.0).toFloat()
+
+        return 0.78f + (0.22f * wave)
     }
 
     private fun withAlpha(
