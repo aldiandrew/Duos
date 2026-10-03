@@ -22,7 +22,7 @@ class DuoIndicatorView(context: Context) : View(context) {
          * Geometry follows the compact Duo reference: the ring is a C-shape, with the upper opening
          * reserved for the percentage/charging glyph and the lower area reserved for signal dots.
          */
-        const val DESIGN_SIZE = 103f
+        const val DESIGN_SIZE = 112f
         const val STROKE = 7.2f
         const val LEFT_START = 0.6631f
         const val PERCENT_GAP_DEG = 71.3f
