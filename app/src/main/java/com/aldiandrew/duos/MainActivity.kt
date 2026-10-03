@@ -101,8 +101,8 @@ class MainActivity : ComponentActivity() {
             )
 
             Text(
-                "Step 1: hide the original Android status bar. " +
-                    "Step 2: show the custom status bar."
+                "1. Hide the original Android status bar. " +
+                    "2. Show the custom status bar."
             )
 
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -116,9 +116,9 @@ class MainActivity : ComponentActivity() {
                             !shizukuAvailable ->
                                 "Start Shizuku first, then return to Duos."
                             !shizukuPermission ->
-                                "Duos permission is required; the permission request will be triggered automatically when Shizuku is available."
+                                "Duos permission is required."
                             else ->
-                                "Duos is authorized to run the required commands."
+                                "Duos is authorized."
                         },
                         modifier = Modifier.padding(top = 4.dp)
                     )
@@ -129,20 +129,17 @@ class MainActivity : ComponentActivity() {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text(
                         "System Status Bar: " +
-                            when {
-                                systemBarHidden -> "HIDDEN"
-                                else -> "VISIBLE"
-                            },
+                            if (systemBarHidden) "HIDDEN" else "VISIBLE",
                         style = MaterialTheme.typography.titleMedium
                     )
                     Text(
                         when {
                             systemBarHidden && customActive ->
-                                "Original status bar is hidden and the custom layer is running."
+                                "Native status bar is hidden and the custom bar is visible."
                             systemBarHidden ->
-                                "Original status bar is hidden. You can now show the custom status bar."
+                                "Native status bar is hidden. Custom bar can now be shown."
                             else ->
-                                "Original Android status bar is visible."
+                                "Native Android status bar is visible."
                         },
                         modifier = Modifier.padding(top = 4.dp)
                     )
@@ -182,8 +179,9 @@ class MainActivity : ComponentActivity() {
             }
 
             Text(
-                "The custom button never hides the native status bar automatically. " +
-                    "This keeps the two operations independent and makes failures easier to diagnose."
+                "The custom status bar uses a normal app foreground service " +
+                    "and TYPE_APPLICATION_OVERLAY. Shizuku enables the required " +
+                    "overlay AppOp automatically; no manual overlay prompt is required."
             )
         }
     }
@@ -194,7 +192,10 @@ class MainActivity : ComponentActivity() {
         lifecycleScope.launch {
             if (systemBarHidden) {
                 if (customActive) {
-                    ShizukuOverlayController.stop(restoreSystemBar = false)
+                    ShizukuOverlayController.stop(
+                        this@MainActivity,
+                        restoreSystemBar = false
+                    )
                     customActive = false
                 }
 
@@ -235,7 +236,10 @@ class MainActivity : ComponentActivity() {
         busy = true
 
         if (customActive) {
-            ShizukuOverlayController.stop(restoreSystemBar = false) {
+            ShizukuOverlayController.stop(
+                this,
+                restoreSystemBar = false
+            ) {
                 customActive = false
                 busy = false
                 refreshSystemBarState()
@@ -290,7 +294,8 @@ class MainActivity : ComponentActivity() {
     private fun showError(message: String) {
         Toast.makeText(
             this,
-            message,
+            message.lineSequence().firstOrNull()
+                ?: "Unknown error",
             Toast.LENGTH_LONG
         ).show()
     }
