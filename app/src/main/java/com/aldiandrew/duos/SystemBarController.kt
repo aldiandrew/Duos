@@ -6,7 +6,23 @@ import kotlinx.coroutines.withContext
 
 object SystemBarController {
 
+    suspend fun isHidden(): Boolean = withContext(Dispatchers.IO) {
+        val current = ShizukuManager.executeCommand(
+            "settings get global policy_control"
+        )
+
+        if (current.isFailure) {
+            return@withContext false
+        }
+
+        current.getOrDefault("")
+            .trim()
+            .contains("immersive.status=*")
+    }
+
     suspend fun hide(): Result<String> = withContext(Dispatchers.IO) {
+        // Keep the same CleanBar-style sequence:
+        // exit demo mode, disable status-bar icons, then apply immersive.status.
         ShizukuManager.executeCommand(
             "am broadcast -a com.android.systemui.demo -e command exit"
         )
@@ -25,13 +41,7 @@ object SystemBarController {
 
         delay(150)
 
-        val current = ShizukuManager.executeCommand(
-            "settings get global policy_control"
-        )
-
-        val value = current.getOrDefault("").trim()
-
-        if (value.contains("immersive.status=*")) {
+        if (isHidden()) {
             Result.success("System status bar hidden")
         } else {
             Result.failure(
@@ -65,6 +75,7 @@ object SystemBarController {
             nullValue.isSuccess ||
             demoExit.isSuccess
         ) {
+            delay(100)
             Result.success("System status bar restored")
         } else {
             Result.failure(
