@@ -76,6 +76,30 @@ class CustomStatusBarService : Service() {
         }
     }
 
+    private val positionRunnable = object : Runnable {
+        override fun run() {
+            try {
+                val view = rootView
+                val wm = windowManager
+                if (view != null && wm != null) {
+                    applyDynamicOverlayPosition(
+                        view,
+                        overlaySizePx(),
+                        view.rootWindowInsets
+                    )
+                }
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "overlay settings refresh failed: " +
+                        t.javaClass.simpleName +
+                        ": " + t.message
+                )
+            }
+            handler.postDelayed(this, 500L)
+        }
+    }
+
     private val appearanceRunnable = object : Runnable {
         override fun run() {
             scope.launch {
@@ -128,6 +152,7 @@ class CustomStatusBarService : Service() {
     override fun onDestroy() {
         handler.removeCallbacks(refreshRunnable)
         handler.removeCallbacks(appearanceRunnable)
+        handler.removeCallbacks(positionRunnable)
 
         rootView?.let {
             try {
@@ -210,7 +235,7 @@ class CustomStatusBarService : Service() {
             getSystemService(Context.WINDOW_SERVICE) as? WindowManager
                 ?: throw IllegalStateException("WindowManager unavailable")
 
-        val side = compactSizePx()
+        val side = overlaySizePx()
 
         val params = WindowManager.LayoutParams(
             side,
@@ -243,7 +268,11 @@ class CustomStatusBarService : Service() {
             View.IMPORTANT_FOR_ACCESSIBILITY_NO
 
         customView.setOnApplyWindowInsetsListener { view, insets ->
-            applyDynamicOverlayPosition(view, side, insets)
+            applyDynamicOverlayPosition(
+                view,
+                overlaySizePx(),
+                insets
+            )
             insets
         }
 
@@ -262,7 +291,7 @@ class CustomStatusBarService : Service() {
         customView.post {
             applyDynamicOverlayPosition(
                 customView,
-                side,
+                overlaySizePx(),
                 customView.rootWindowInsets
             )
         }
@@ -278,6 +307,7 @@ class CustomStatusBarService : Service() {
 
         handler.post(refreshRunnable)
         handler.postDelayed(appearanceRunnable, 500L)
+        handler.post(positionRunnable)
     }
 
     private fun readState(
@@ -546,23 +576,46 @@ class CustomStatusBarService : Service() {
         // Center the Duo square inside the status-bar band. When the band is
         // shorter than the overlay, clamp at zero instead of using a negative
         // y value that can clip the top of the indicator.
-        val targetY = ((topBand - side) / 2).coerceAtLeast(0)
+        val baseY = ((topBand - side) / 2).coerceAtLeast(0)
 
-        // With TOP|END gravity, x is the inward distance from the physical
-        // right edge. Respect devices with a right-side safe inset.
-        val targetX = maxOf(
-            dp(6f),
-            cutoutRight
-        )
+        // Automatic mode uses the safe right inset plus a small inward margin.
+        // Manual mode applies a bounded fine adjustment on top of that safe base.
+        val automatic = DuoPreferences.isAutomaticPosition(this)
+        val horizontalOffset = if (automatic) {
+            0f
+        } else {
+            DuoPreferences.getHorizontalOffsetDp(this)
+        }
+        val verticalOffset = if (automatic) {
+            0f
+        } else {
+            DuoPreferences.getVerticalOffsetDp(this)
+        }
+
+        val targetY = (
+            baseY + dp(verticalOffset)
+        ).coerceAtLeast(0)
+
+        val targetX = (
+            maxOf(dp(6f), cutoutRight) +
+                dp(horizontalOffset)
+            ).coerceAtLeast(0)
+
+        val params = overlayParams ?: return
+
+        val sizeChanged =
+            params.width != side || params.height != side
 
         if (
+            !sizeChanged &&
             targetX == lastOverlayX &&
             targetY == lastOverlayY
         ) {
             return
         }
 
-        val params = overlayParams ?: return
+        params.width = side
+        params.height = side
         params.x = targetX
         params.y = targetY
 
@@ -576,6 +629,8 @@ class CustomStatusBarService : Service() {
                 "Duo overlay position: x=" + targetX +
                     " y=" + targetY +
                     " statusTop=" + statusTop +
+                    " automatic=" + automatic +
+                    " size=" + side +
                     " cutoutTop=" + cutoutTop +
                     " cutoutRight=" + cutoutRight +
                     " side=" + side
@@ -589,6 +644,10 @@ class CustomStatusBarService : Service() {
             )
         }
     }
+
+    private fun overlaySizePx(): Int =
+        dp(DuoPreferences.getIndicatorSizeDp(this))
+            .coerceAtLeast(1)
 
     private fun dp(value: Float): Int =
         (value * resources.displayMetrics.density)
