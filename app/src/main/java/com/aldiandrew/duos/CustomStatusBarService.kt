@@ -317,6 +317,7 @@ class CustomStatusBarService : Service() {
         val wifi = wifiState()
         val airplane = isAirplaneOn()
         val dnd = isDndOn()
+        val vpn = isVpnActive()
         val telephony = telephonyState(airplane)
 
         return DuoStatusState(
@@ -330,6 +331,7 @@ class CustomStatusBarService : Service() {
             networkGeneration = telephony.second,
             airplane = airplane,
             dnd = dnd,
+            vpnConnected = vpn,
             foregroundColor =
                 foregroundOverride
                     ?: if (isNightMode()) Color.WHITE else Color.BLACK,
@@ -505,6 +507,28 @@ class CustomStatusBarService : Service() {
                     as? android.os.PowerManager
             power?.isPowerSaveMode == true
         } catch (_: Throwable) {
+            false
+        }
+
+    private fun isVpnActive(): Boolean =
+        try {
+            val connectivity =
+                getSystemService(Context.CONNECTIVITY_SERVICE)
+                    as? ConnectivityManager
+                    ?: return false
+
+            val network = connectivity.activeNetwork ?: return false
+            val caps = connectivity.getNetworkCapabilities(network)
+                ?: return false
+
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
+        } catch (t: Throwable) {
+            Log.w(
+                TAG,
+                "VPN read failed: " +
+                    t.javaClass.simpleName +
+                    ": " + t.message
+            )
             false
         }
 
