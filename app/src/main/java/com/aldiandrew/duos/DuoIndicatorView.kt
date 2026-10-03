@@ -89,9 +89,14 @@ class DuoIndicatorView(context: Context) : View(context) {
         val side = min(width, height).toFloat()
         if (side <= 0f) return
 
-        val k = side / DESIGN_SIZE
+        // Keep the drawing away from the overlay edges. The previous renderer
+        // used the full canvas, so a rounded stroke at the top could be clipped
+        // even when the WindowManager position itself was correct.
+        val safeInset = side * 3f / 36f
+        val contentSide = (side - safeInset * 2f).coerceAtLeast(1f)
+        val k = contentSide / DESIGN_SIZE
         val stroke = STROKE * k
-        val radius = (side - stroke) / 2f
+        val radius = (contentSide - stroke) / 2f
         val cx = width / 2f
         val cy = height / 2f
 
