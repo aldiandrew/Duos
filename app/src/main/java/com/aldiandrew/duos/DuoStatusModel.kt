@@ -1,13 +1,13 @@
+package com.aldiandrew.duos
+
+import android.graphics.Color
+
 enum class DuoVisualStyle {
     DUO,
     COMPACT,
     MINIMAL,
     RING
 }
-
-package com.aldiandrew.duos
-
-import android.graphics.Color
 
 /**
  * Immutable snapshot consumed by the compact custom status-bar indicator.
