@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Duos</string>
+    <string name="notification_channel_name">Custom Status Bar</string>
+    <string name="notification_channel_description">Keeps the custom status bar overlay running.</string>
+</resources>
