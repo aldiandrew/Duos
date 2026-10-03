@@ -2,10 +2,8 @@ package com.aldiandrew.duos
 
 import android.Manifest
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,30 +22,31 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
+
     private var shizukuAvailable by mutableStateOf(false)
     private var shizukuPermission by mutableStateOf(false)
+    private var active by mutableStateOf(false)
+    private var starting by mutableStateOf(false)
 
-    private val binderReceived = Shizuku.OnBinderReceivedListener {
-        refreshShizuku()
-    }
+    private val binderReceived =
+        Shizuku.OnBinderReceivedListener {
+            refreshShizuku()
+        }
 
-    private val binderDead = Shizuku.OnBinderDeadListener {
-        refreshShizuku()
-    }
+    private val binderDead =
+        Shizuku.OnBinderDeadListener {
+            shizukuAvailable = false
+            shizukuPermission = false
+            active = false
+        }
 
     private val permissionResult =
         Shizuku.OnRequestPermissionResultListener { code, _ ->
@@ -73,21 +72,13 @@ class MainActivity : ComponentActivity() {
 
         refreshShizuku()
 
-        if (!getSharedPreferences("duos", MODE_PRIVATE)
-                .getBoolean("enabled", false)
-        ) {
-            lifecycleScope.launch {
-                if (ShizukuManager.hasPermission()) {
-                    StatusBarHider.restore()
-                }
-            }
-        }
-
         if (Build.VERSION.SDK_INT >= 33) {
             notificationPermissionLauncher.launch(
                 Manifest.permission.POST_NOTIFICATIONS
             )
         }
+
+        active = ShizukuOverlayController.isBound()
 
         setContent {
             MaterialTheme {
@@ -100,26 +91,6 @@ class MainActivity : ComponentActivity() {
 
     @Composable
     private fun MainScreen() {
-        val scope = rememberCoroutineScope()
-
-        var overlayGranted by remember {
-            mutableStateOf(Settings.canDrawOverlays(this))
-        }
-
-        var active by remember {
-            mutableStateOf(false)
-        }
-
-        LaunchedEffect(shizukuAvailable, shizukuPermission) {
-            overlayGranted =
-                Settings.canDrawOverlays(this@MainActivity)
-
-            active =
-                shizukuAvailable &&
-                    shizukuPermission &&
-                    StatusBarHider.isHidden()
-        }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -138,7 +109,7 @@ class MainActivity : ComponentActivity() {
             )
 
             Text(
-                "Hide the stock status bar with Shizuku and display a custom overlay. No root and no ADB WRITE_SECURE_SETTINGS grant is required."
+                "The custom bar uses a Shizuku UserService so it can be placed above the Android SystemUI status bar without root."
             )
 
             StatusCard(
@@ -156,7 +127,9 @@ class MainActivity : ComponentActivity() {
                     onClick = {
                         try {
                             startActivity(
-                                Intent("moe.shizuku.manager.ACTION_SETTINGS")
+                                Intent(
+                                    "moe.shizuku.manager.ACTION_SETTINGS"
+                                )
                             )
                         } catch (_: Throwable) {
                             Toast.makeText(
@@ -194,70 +167,51 @@ class MainActivity : ComponentActivity() {
             }
 
             StatusCard(
-                "Overlay",
-                overlayGranted,
-                "Required for the custom status bar UI."
-            )
-
-            if (!overlayGranted) {
-                Button(
-                    onClick = {
-                        startActivity(
-                            Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:$packageName")
-                            )
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Grant Overlay Permission")
+                "Custom status bar",
+                active,
+                if (active) {
+                    "Running above SystemUI."
+                } else {
+                    "Not running."
                 }
-            }
+            )
 
             Button(
                 enabled = shizukuAvailable &&
                     shizukuPermission &&
-                    overlayGranted,
+                    !starting,
                 onClick = {
                     if (active) {
-                        startService(
-                            Intent(
-                                this@MainActivity,
-                                StatusBarService::class.java
-                            ).apply {
-                                action = StatusBarService.ACTION_STOP
-                            }
-                        )
+                        ShizukuOverlayController.stop()
                         active = false
                     } else {
-                        try {
-                            ContextCompat.startForegroundService(
-                                this@MainActivity,
-                                Intent(
+                        starting = true
+
+                        ShizukuOverlayController.start(
+                            this@MainActivity
+                        ) { success, message ->
+                            starting = false
+                            active = success
+
+                            if (!success) {
+                                Toast.makeText(
                                     this@MainActivity,
-                                    StatusBarService::class.java
-                                ).apply {
-                                    action = StatusBarService.ACTION_START
-                                }
-                            )
-                            active = true
-                        } catch (e: Throwable) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                e.message ?: "Could not start custom status bar",
-                                Toast.LENGTH_LONG
-                            ).show()
+                                    message.ifBlank {
+                                        "Could not start custom status bar"
+                                    },
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    if (active) {
-                        "Stop and Restore Status Bar"
-                    } else {
-                        "Start Custom Status Bar"
+                    when {
+                        starting -> "Starting..."
+                        active -> "Stop Custom Status Bar"
+                        else -> "Start Custom Status Bar"
                     }
                 )
             }
@@ -265,15 +219,7 @@ class MainActivity : ComponentActivity() {
             OutlinedButton(
                 onClick = {
                     refreshShizuku()
-                    overlayGranted =
-                        Settings.canDrawOverlays(this@MainActivity)
-
-                    scope.launch {
-                        active =
-                            shizukuAvailable &&
-                                shizukuPermission &&
-                                StatusBarHider.isHidden()
-                    }
+                    active = ShizukuOverlayController.isBound()
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
@@ -281,7 +227,7 @@ class MainActivity : ComponentActivity() {
             }
 
             Text(
-                "If Shizuku is stopped or authorization is revoked, Duos cannot execute the privileged status-bar commands."
+                "SystemUI remains underneath the custom layer and is not used as the visible status bar."
             )
         }
     }
@@ -315,6 +261,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshShizuku()
+        active = ShizukuOverlayController.isBound()
     }
 
     override fun onDestroy() {
@@ -324,7 +271,6 @@ class MainActivity : ComponentActivity() {
             Shizuku.removeRequestPermissionResultListener(permissionResult)
         } catch (_: Throwable) {
         }
-
         super.onDestroy()
     }
 }
