@@ -30,6 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -114,7 +115,7 @@ class CustomStatusBarService : Service() {
 
     override fun onDestroy() {
         handler.removeCallbacks(clockRunnable)
-        scope.coroutineContext.cancel()
+        scope.cancel()
 
         rootView?.let {
             try {
