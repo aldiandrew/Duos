@@ -102,13 +102,20 @@ class StatusBarService : Service() {
                 return@launch
             }
 
-            showOverlay()
+            val overlayShown = showOverlay()
 
-            if (overlayView != null) {
+            if (overlayShown) {
                 getSharedPreferences(PREFS, MODE_PRIVATE)
                     .edit()
                     .putBoolean("enabled", true)
                     .apply()
+            } else {
+                StatusBarHider.restore()
+                getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .edit()
+                    .putBoolean("enabled", false)
+                    .apply()
+                stopSelf()
             }
         }
     }
@@ -204,12 +211,16 @@ class StatusBarService : Service() {
         }
     }
 
-    private fun showOverlay() {
+    private fun showOverlay(): Boolean {
         stopOverlay()
 
         if (!Settings.canDrawOverlays(this)) {
-            showErrorAndStop("Overlay permission is missing")
-            return
+            Toast.makeText(
+                this,
+                "Overlay permission is missing",
+                Toast.LENGTH_LONG
+            ).show()
+            return false
         }
 
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
@@ -285,19 +296,23 @@ class StatusBarService : Service() {
             )
         )
 
-        try {
+        return try {
             windowManager?.addView(container, params)
             overlayView = container
 
             updateStatus()
             handler.removeCallbacks(updateRunnable)
             handler.post(updateRunnable)
+            true
         } catch (e: Throwable) {
             overlayView = null
-            showErrorAndStop(
+            Toast.makeText(
+                this,
                 "Could not add custom status bar: " +
-                    (e.message ?: "unknown error")
-            )
+                    (e.message ?: "unknown error"),
+                Toast.LENGTH_LONG
+            ).show()
+            false
         }
     }
 
