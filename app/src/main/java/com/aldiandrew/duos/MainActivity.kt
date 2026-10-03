@@ -1,10 +1,12 @@
 package com.aldiandrew.duos
 
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,7 +29,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import rikka.shizuku.Shizuku
 
 class MainActivity : ComponentActivity() {
@@ -65,6 +69,24 @@ class MainActivity : ComponentActivity() {
             shizukuPermission = false
             customActive = false
             busy = false
+        }
+
+    private val exportSettingsLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.CreateDocument("application/json")
+        ) { uri ->
+            if (uri != null) {
+                exportSettings(uri)
+            }
+        }
+
+    private val importSettingsLauncher =
+        registerForActivityResult(
+            ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                importSettings(uri)
+            }
         }
 
     private val permissionResult =
@@ -479,6 +501,66 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Configuration",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        "Export or import indicator size, position, style, and colors as a JSON file.",
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                exportSettingsLauncher.launch(
+                                    "Duos-settings.json"
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Export")
+                        }
+
+                        Button(
+                            onClick = {
+                                importSettingsLauncher.launch(
+                                    arrayOf("application/json", "text/json")
+                                )
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Import")
+                        }
+                    }
+
+                    Button(
+                        onClick = {
+                            DuoPreferences.resetAll(this@MainActivity)
+                            loadPreferences()
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Duos settings reset.",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 8.dp)
+                    ) {
+                        Text("Reset All Settings")
+                    }
+                }
+            }
+
             Text(
                 "Duos uses a normal application overlay for rendering. Shizuku is only the " +
                     "control layer for the SystemUI flags and overlay AppOp. If the custom " +
@@ -586,6 +668,68 @@ class MainActivity : ComponentActivity() {
         automaticPosition = DuoPreferences.isAutomaticPosition(this)
         horizontalOffsetDp = DuoPreferences.getHorizontalOffsetDp(this)
         verticalOffsetDp = DuoPreferences.getVerticalOffsetDp(this)
+    }
+
+    private fun exportSettings(uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                contentResolver.openOutputStream(uri)?.use { output ->
+                    output.write(
+                        DuoPreferences
+                            .exportSettings(this@MainActivity)
+                            .toByteArray(Charsets.UTF_8)
+                    )
+                } ?: error("Could not open export destination")
+            }
+
+            withContext(Dispatchers.Main) {
+                Toast.makeText(
+                    this@MainActivity,
+                    if (result.isSuccess) {
+                        "Duos settings exported."
+                    } else {
+                        "Export failed: " +
+                            (result.exceptionOrNull()?.message ?: "unknown error")
+                    },
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+        }
+    }
+
+    private fun importSettings(uri: Uri) {
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = runCatching {
+                val content =
+                    contentResolver.openInputStream(uri)?.use { input ->
+                        input.readBytes().toString(Charsets.UTF_8)
+                    } ?: error("Could not open settings file")
+
+                DuoPreferences.importSettings(
+                    this@MainActivity,
+                    content
+                ).getOrThrow()
+            }
+
+            withContext(Dispatchers.Main) {
+                if (result.isSuccess) {
+                    loadPreferences()
+
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Duos settings imported.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    Toast.makeText(
+                        this@MainActivity,
+                        "Import failed: " +
+                            (result.exceptionOrNull()?.message ?: "unknown error"),
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            }
+        }
     }
 
     private fun parseColorOrNull(value: String): Int? {
