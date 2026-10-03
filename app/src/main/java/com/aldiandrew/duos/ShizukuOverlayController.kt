@@ -11,6 +11,7 @@ import rikka.shizuku.Shizuku
 object ShizukuOverlayController {
 
     private const val TAG = "duos_overlay"
+    private const val USER_SERVICE_VERSION = 6
 
     private var args: Shizuku.UserServiceArgs? = null
     private var connection: ServiceConnection? = null
@@ -29,14 +30,15 @@ object ShizukuOverlayController {
             return
         }
 
-        if (binder != null) {
+        val existing = binder
+        if (existing != null) {
             try {
-                val remote = binder
-                if (remote != null && remote.isReady) {
+                if (existing.isReady()) {
                     callback(true, "")
                     return
                 }
             } catch (_: Throwable) {
+                binder = null
             }
         }
 
@@ -49,10 +51,11 @@ object ShizukuOverlayController {
             .daemon(true)
             .tag(TAG)
             .processNameSuffix("overlay")
-            .debuggable(BuildConfig.DEBUG)
-            .version(BuildConfig.VERSION_CODE)
+            .version(USER_SERVICE_VERSION)
 
-        val serviceConnection = object : ServiceConnection {
+        lateinit var serviceConnection: ServiceConnection
+
+        serviceConnection = object : ServiceConnection {
             override fun onServiceConnected(
                 name: ComponentName?,
                 service: IBinder?
@@ -61,12 +64,14 @@ object ShizukuOverlayController {
                     val remote = IDuosOverlay.Stub.asInterface(service)
                     binder = remote
 
-                    val success = remote != null && remote.isReady
+                    val success = remote?.isReady() == true
                     val message = if (success) {
                         ""
                     } else {
-                        remote?.error
-                            ?: "Custom status bar overlay did not start"
+                        remote?.getError().orEmpty()
+                            .ifBlank {
+                                "Custom status bar overlay did not start"
+                            }
                     }
 
                     if (!success) {
@@ -79,6 +84,8 @@ object ShizukuOverlayController {
                         } catch (_: Throwable) {
                         }
                         binder = null
+                        args = null
+                        connection = null
                     }
 
                     mainHandler.post {
@@ -121,6 +128,7 @@ object ShizukuOverlayController {
             binder = null
             args = null
             connection = null
+
             callback(
                 false,
                 t.message
