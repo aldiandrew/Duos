@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
                         active = !active
                     }
                 },
-                Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(if (active) "Stop and Restore Status Bar" else "Start Custom Status Bar")
             }
@@ -161,7 +161,7 @@ class MainActivity : ComponentActivity() {
     private fun StatusCard(title: String, ok: Boolean, description: String) {
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp)) {
-                Text("\$title: \${if (ok) "READY" else "NOT READY"}", style = MaterialTheme.typography.titleMedium)
+                Text("$title: ${if (ok) "READY" else "NOT READY"}", style = MaterialTheme.typography.titleMedium)
                 Text(description, Modifier.padding(top = 4.dp))
             }
         }
