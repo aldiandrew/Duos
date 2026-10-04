@@ -20,38 +20,6 @@ object SystemBarController {
             .contains("immersive.status=*")
     }
 
-    suspend fun hide(): Result<String> = withContext(Dispatchers.IO) {
-        // CleanBar-style sequence: leave demo mode, disable the visible
-        // status-bar elements, then apply the immersive status policy.
-        ShizukuManager.executeCommand(
-            "am broadcast -a com.android.systemui.demo -e command exit"
-        )
-
-        ShizukuManager.executeCommand(
-            "cmd statusbar send-disable-flag system-icons clock notification-icons"
-        )
-
-        val policy = ShizukuManager.executeCommand(
-            "settings put global policy_control 'immersive.status=*'"
-        )
-
-        if (policy.isFailure) {
-            return@withContext policy
-        }
-
-        delay(150)
-
-        if (isHidden()) {
-            Result.success("System status bar hidden")
-        } else {
-            Result.failure(
-                IllegalStateException(
-                    "Android did not apply immersive.status policy"
-                )
-            )
-        }
-    }
-
     /**
      * Keeps the native status-bar container visible while disabling only
      * the SystemUI system-icon group for the Duo replacement.
