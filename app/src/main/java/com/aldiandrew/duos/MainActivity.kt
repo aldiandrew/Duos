@@ -1,5 +1,6 @@
 package com.aldiandrew.duos
 
+import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -589,6 +590,30 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            ElevatedCard(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        "Uninstall",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+
+                    Text(
+                        "Restore the native system status bar before uninstalling Duos.",
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+
+                    OutlinedButton(
+                        enabled = !busy,
+                        onClick = { uninstallDuos() },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp)
+                    ) {
+                        Text("Uninstall")
+                    }
+                }
+            }
+
             Text(
                 "Duos uses a normal application overlay for rendering. Shizuku is only the " +
                     "control layer for the SystemUI flags and overlay AppOp. If the custom " +
@@ -773,6 +798,83 @@ class MainActivity : ComponentActivity() {
             Color.parseColor(normalized)
         } catch (_: IllegalArgumentException) {
             null
+        }
+    }
+
+    private fun uninstallDuos() {
+        if (busy) return
+
+        // If the custom bar is active, stop it first. The controller restores
+        // SystemUI, then we verify the restore before allowing Android to uninstall.
+        if (customActive) {
+            busy = true
+            ShizukuOverlayController.stop(
+                this,
+                restoreSystemBar = true
+            ) {
+                customActive = false
+
+                lifecycleScope.launch(Dispatchers.IO) {
+                    val restore = runCatching {
+                        SystemBarController.restore().getOrThrow()
+                    }
+
+                    withContext(Dispatchers.Main) {
+                        busy = false
+
+                        if (restore.isSuccess) {
+                            launchUninstallIntent()
+                        } else {
+                            showError(
+                                "Status bar could not be restored. Uninstall cancelled."
+                            )
+                            refreshCustomState()
+                        }
+                    }
+                }
+            }
+            return
+        }
+
+        // Even when Duos reports itself inactive, do a final verified restore
+        // whenever Shizuku is available so an old SystemUI state is not left behind.
+        if (ShizukuManager.hasPermission()) {
+            busy = true
+
+            lifecycleScope.launch(Dispatchers.IO) {
+                val restore = runCatching {
+                    SystemBarController.restore().getOrThrow()
+                }
+
+                withContext(Dispatchers.Main) {
+                    busy = false
+
+                    if (restore.isSuccess) {
+                        launchUninstallIntent()
+                    } else {
+                        showError(
+                            "Status bar could not be restored. Uninstall cancelled."
+                        )
+                    }
+                }
+            }
+        } else {
+            launchUninstallIntent()
+        }
+    }
+
+    private fun launchUninstallIntent() {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_DELETE).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+            )
+        } catch (t: Throwable) {
+            showError(
+                "Could not open the Android uninstall screen: " +
+                    (t.message ?: "unknown error")
+            )
         }
     }
 
