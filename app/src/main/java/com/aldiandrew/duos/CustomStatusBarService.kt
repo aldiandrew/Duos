@@ -4,10 +4,8 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
 import android.graphics.Color
@@ -19,7 +17,6 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.provider.Settings
-import android.telephony.TelephonyCallback
 import android.telephony.TelephonyManager
 import android.util.Log
 import android.view.DisplayCutout
@@ -27,6 +24,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
+import androidx.annotation.Keep
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -34,87 +32,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 
+@Keep
 class CustomStatusBarService : Service() {
-
-    private var windowManager: WindowManager? = null
-    private var rootView: DuoIndicatorView? = null
-    private var overlayParams: WindowManager.LayoutParams? = null
-    private var lastOverlayY: Int? = null
-    private var lastOverlayX: Int? = null
-
-    private val handler = Handler(android.os.Looper.getMainLooper())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
-    private val stateRefreshRunnable = Runnable {
-        scope.launch {
-            try {
-                val snapshot = readState()
-                handler.post { rootView?.update(snapshot) }
-            } catch (t: Throwable) {
-                Log.w(TAG, "state refresh failed: " + t.javaClass.simpleName + ": " + t.message)
-            }
-        }
-    }
-
-    private val positionRefreshRunnable = Runnable {
-        try {
-            val view = rootView
-            if (view != null && windowManager != null) {
-                applyDynamicOverlayPosition(view, overlaySizePx(), view.rootWindowInsets)
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "overlay settings refresh failed: " + t.javaClass.simpleName + ": " + t.message)
-        }
-    }
-
-    private val appearanceRunnable = object : Runnable {
-        override fun run() {
-            scope.launch {
-                val light = readLightStatusBar()
-                val snapshot = readState(foregroundOverride = if (light) Color.BLACK else Color.WHITE)
-                handler.post { rootView?.update(snapshot) }
-            }
-            handler.postDelayed(this, APPEARANCE_REFRESH_MS)
-        }
-    }
-
-    private val stateReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context?, intent: Intent?) {
-            requestStateRefresh()
-        }
-    }
-
-    private val preferencesListener =
-        android.content.SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
-            requestStateRefresh()
-            requestPositionRefresh()
-        }
-
-    private val networkCallback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: android.net.Network) = requestStateRefresh()
-        override fun onLost(network: android.net.Network) = requestStateRefresh()
-        override fun onCapabilitiesChanged(network: android.net.Network, networkCapabilities: NetworkCapabilities) = requestStateRefresh()
-    }
-
-    private var telephonyManager: TelephonyManager? = null
-    private var telephonyCallback: TelephonyCallback? = null
-    private val telephonyStateCallback: TelephonyCallback? = if (Build.VERSION.SDK_INT >= 31) {
-        object : TelephonyCallback(),
-            TelephonyCallback.SignalStrengthsListener,
-            TelephonyCallback.ServiceStateListener,
-            TelephonyCallback.DisplayInfoListener {
-            override fun onSignalStrengthsChanged(signalStrength: android.telephony.SignalStrength) = requestStateRefresh()
-            override fun onServiceStateChanged(serviceState: android.telephony.ServiceState) = requestStateRefresh()
-            override fun onDisplayInfoChanged(telephonyDisplayInfo: android.telephony.TelephonyDisplayInfo) = requestStateRefresh()
-        }
-    } else null
 
     companion object {
         private const val TAG = "duos_overlay"
         private const val CHANNEL_ID = "duos_custom_status_bar"
         private const val NOTIFICATION_ID = 1001
-        private const val PREFS_NAME = "duos_preferences"
-        private const val APPEARANCE_REFRESH_MS = 15000L
 
         @Volatile
         var isRunning: Boolean = false
@@ -129,14 +53,66 @@ class CustomStatusBarService : Service() {
         }
     }
 
-    private fun requestStateRefresh() {
-        handler.removeCallbacks(stateRefreshRunnable)
-        handler.postDelayed(stateRefreshRunnable, 75L)
+    private var windowManager: WindowManager? = null
+    private var rootView: DuoIndicatorView? = null
+    private var overlayParams: WindowManager.LayoutParams? = null
+    private var lastOverlayY: Int? = null
+    private var lastOverlayX: Int? = null
+
+    private val handler = Handler(android.os.Looper.getMainLooper())
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    private val refreshRunnable = object : Runnable {
+        override fun run() {
+            try {
+                rootView?.update(readState())
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "state refresh failed: ${t.javaClass.simpleName}: ${t.message}"
+                )
+            }
+            handler.postDelayed(this, 1000L)
+        }
     }
 
-    private fun requestPositionRefresh() {
-        handler.removeCallbacks(positionRefreshRunnable)
-        handler.postDelayed(positionRefreshRunnable, 75L)
+    private val positionRunnable = object : Runnable {
+        override fun run() {
+            try {
+                val view = rootView
+                val wm = windowManager
+                if (view != null && wm != null) {
+                    applyDynamicOverlayPosition(
+                        view,
+                        overlaySizePx(),
+                        view.rootWindowInsets
+                    )
+                }
+            } catch (t: Throwable) {
+                Log.w(
+                    TAG,
+                    "overlay settings refresh failed: " +
+                        t.javaClass.simpleName +
+                        ": " + t.message
+                )
+            }
+            handler.postDelayed(this, 500L)
+        }
+    }
+
+    private val appearanceRunnable = object : Runnable {
+        override fun run() {
+            scope.launch {
+            val light = readLightStatusBar()
+            val snapshot = readState(
+                foregroundOverride = if (light) Color.BLACK else Color.WHITE
+            )
+            handler.post {
+                rootView?.update(snapshot)
+            }
+        }
+            handler.postDelayed(this, 3000L)
+        }
     }
 
     override fun onCreate() {
@@ -174,10 +150,9 @@ class CustomStatusBarService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        unregisterStateListeners()
-        handler.removeCallbacks(stateRefreshRunnable)
-        handler.removeCallbacks(positionRefreshRunnable)
+        handler.removeCallbacks(refreshRunnable)
         handler.removeCallbacks(appearanceRunnable)
+        handler.removeCallbacks(positionRunnable)
 
         rootView?.let {
             try {
@@ -330,63 +305,9 @@ class CustomStatusBarService : Service() {
             )
         )
 
-        registerStateListeners()
-        requestStateRefresh()
+        handler.post(refreshRunnable)
         handler.postDelayed(appearanceRunnable, 500L)
-    }
-
-    private fun registerStateListeners() {
-        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .registerOnSharedPreferenceChangeListener(preferencesListener)
-
-        val filter = IntentFilter().apply {
-            addAction(Intent.ACTION_BATTERY_CHANGED)
-            addAction(Intent.ACTION_AIRPLANE_MODE_CHANGED)
-            addAction(android.os.PowerManager.ACTION_POWER_SAVE_MODE_CHANGED)
-            addAction(NotificationManager.ACTION_INTERRUPTION_FILTER_CHANGED)
-        }
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(stateReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
-        } else {
-            @Suppress("DEPRECATION")
-            registerReceiver(stateReceiver, filter)
-        }
-
-        val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        if (connectivity != null) {
-            try { connectivity.registerDefaultNetworkCallback(networkCallback) }
-            catch (t: Throwable) { Log.w(TAG, "Network callback registration failed", t) }
-        }
-
-        if (Build.VERSION.SDK_INT >= 31) {
-            try {
-                val tm = getSystemService(Context.TELEPHONY_SERVICE) as? TelephonyManager
-                val callback = telephonyStateCallback
-                if (tm != null && callback != null) {
-                    telephonyManager = tm
-                    telephonyCallback = callback
-                    tm.registerTelephonyCallback(mainExecutor, callback)
-                }
-            } catch (t: Throwable) { Log.w(TAG, "Telephony callback registration failed", t) }
-        }
-    }
-
-    private fun unregisterStateListeners() {
-        try { getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(preferencesListener) } catch (_: Throwable) {}
-        try { unregisterReceiver(stateReceiver) } catch (_: Throwable) {}
-        try {
-            val connectivity = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            connectivity?.unregisterNetworkCallback(networkCallback)
-        } catch (_: Throwable) {}
-        if (Build.VERSION.SDK_INT >= 31) {
-            try {
-                val tm = telephonyManager
-                val callback = telephonyCallback
-                if (tm != null && callback != null) tm.unregisterTelephonyCallback(callback)
-            } catch (_: Throwable) {}
-        }
-        telephonyManager = null
-        telephonyCallback = null
+        handler.post(positionRunnable)
     }
 
     private fun readState(
@@ -655,9 +576,6 @@ class CustomStatusBarService : Service() {
             resources.configuration.uiMode and
                 Configuration.UI_MODE_NIGHT_MASK
             ) == Configuration.UI_MODE_NIGHT_YES
-
-    private fun compactSizePx(): Int =
-        dp(36f).coerceAtLeast(1)
 
     private fun applyDynamicOverlayPosition(
         view: View,
